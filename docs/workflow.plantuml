@@ -1,0 +1,16 @@
+@startuml graph
+participant input
+participant scantask
+participant list
+participant status
+
+input -> list: update query
+input -> scantask: new scan task
+
+scantask -> list: clear msg
+scantask -> list: add content
+
+
+
+@enduml
+
