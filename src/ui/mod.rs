@@ -10,6 +10,7 @@ pub mod finder;
 pub mod input;
 pub mod status;
 pub mod theme;
+pub mod fileinfo;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NeedRedraw {

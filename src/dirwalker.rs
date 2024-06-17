@@ -1,4 +1,3 @@
-
 use flume::Sender;
 use futures_util::StreamExt;
 use tracing::{error, warn};
@@ -45,23 +44,6 @@ impl DirFilterBuilder {
 	}
 }
 
-fn diff_path(base: &str, total: &str) -> usize {
-	if base == "/" {
-		return 0;
-	}
-
-	if !total.starts_with(base) {
-		warn!("{} should be prefix of {}", base, total);
-		0
-	} else {
-		if base.ends_with("/") {
-			base.len()
-		} else {
-			base.len() + 1
-		}
-	}
-}
-
 pub fn rebuild_dirlist_start(sender: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 	let cwd = cwd.to_string();
 	tokio::spawn(async move {
@@ -82,11 +64,7 @@ pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 					let path = en.path();
 					match path.as_os_str().to_str() {
 						Some(path_str) => {
-							let info = FileInfo::new(
-								path_str,
-								diff_path(cwd, path_str),
-								path.metadata().ok()
-							);
+							let info = FileInfo::new(path_str, cwd, path.metadata().ok());
 							items.push(info);
 							if items.len() > 200000 {
 								tx.send_async(FinderIn::ContentsExtend(items))
@@ -107,11 +85,7 @@ pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 			while let Some(Ok(en)) = wd.next().await {
 				let path = en.path();
 				if let Some(path_str) = path.to_str() {
-					items.push(FileInfo::new(
-						path_str,
-						diff_path(cwd, path_str),
-						en.metadata().await.ok()
-					));
+					items.push(FileInfo::new(path_str, cwd, en.metadata().await.ok()));
 					if items.len() > 200000 {
 						tx.send_async(FinderIn::ContentsExtend(items))
 							.await

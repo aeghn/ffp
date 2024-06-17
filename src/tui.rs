@@ -4,9 +4,7 @@ use chin_tools::wrapper::anyhow::RResult;
 use crossterm::{
 	event::Event,
 	execute,
-	terminal::{
-		BeginSynchronizedUpdate, EndSynchronizedUpdate
-	}
+	terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate}
 };
 use futures_util::{FutureExt, StreamExt};
 use ratatui::{
@@ -17,7 +15,9 @@ use ratatui::{
 
 use crate::{
 	dirwalker::{self, DirFilter},
+	fileinfo::FileInfo,
 	ui::{
+		fileinfo::FileSkim,
 		finder::{Finder, FinderIn},
 		input::Input,
 		status::Status,
@@ -99,8 +99,15 @@ impl Tui {
 		let mut input = Input::new(areas.input.clone(), input_out_tx);
 		let mut finder = Finder::new(theme.clone(), areas.finder.clone(), finder_out_tx);
 		let mut status = Status::new(cwd, areas.status.clone());
+		let mut fileinfo: Option<FileInfo> = None;
 
 		let mut needs_redraw = true;
+
+		let cookie = magic::Cookie::open(magic::cookie::Flags::ERROR)?;
+
+		let database = Default::default();
+
+		let cookie = cookie.load(&database).ok();
 
 		Ok(loop {
 			if needs_redraw {
@@ -109,6 +116,15 @@ impl Tui {
 					input.draw(f).unwrap();
 					finder.draw(f).unwrap();
 					status.draw(f).unwrap();
+/* 					if let Some(file) = fileinfo.as_mut() {
+						// file.set_file_info(cookie.as_ref());
+						let fs = FileSkim::new(
+							file.metadata.as_ref(),
+							file.desc.as_ref(),
+							areas.info.clone()
+						);
+						fs.draw(f).unwrap();
+					} */
 				})?;
 			}
 
@@ -166,6 +182,7 @@ impl Tui {
 							true
 						},
 						crate::ui::finder::FinderOut::Selected(selected) => {
+							fileinfo.replace(FileInfo::new(selected.path.as_str(), cwd, selected.metadata.clone()));
 							true
 						},
 						crate::ui::finder::FinderOut::TotalCount(count) => {

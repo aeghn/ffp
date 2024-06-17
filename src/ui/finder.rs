@@ -10,6 +10,7 @@ use std::{
 use crossterm::event::Event;
 use flume::Sender;
 use fuzzy_matcher::FuzzyMatcher;
+use glib::property::PropertyGet;
 use ratatui::{
 	layout::Rect,
 	text::{Line, Span},
@@ -42,7 +43,7 @@ pub enum FinderIn {
 #[derive(Debug)]
 pub enum FinderOut {
 	FilterResult(String, Vec<(usize, Option<Vec<usize>>)>),
-	Selected(Option<(usize, String)>),
+	Selected(FileInfo),
 	TotalCount(usize)
 }
 
@@ -241,6 +242,12 @@ impl Component for Finder {
 			.take(height)
 			.map(move |(id, (idx, indices))| {
 				let selected = self.selection.map_or(false, |index| index == id);
+				if selected {
+					let selected = self.contents.read().unwrap().get(*idx).map(|e| e.clone());
+					if let Some(selected) = selected {
+						self.out_tx.send(FinderOut::Selected(selected)).unwrap();
+					}
+				}
 
 				let binding = self.contents.read().unwrap();
 

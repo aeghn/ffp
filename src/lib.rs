@@ -8,6 +8,7 @@ pub mod dirwalker;
 pub mod fileinfo;
 pub mod tui;
 pub mod ui;
+pub mod preview;
 
 pub struct AppState {
 	pub option: Arc<String>,

@@ -1,18 +1,12 @@
 #![feature(if_let_guard)]
 
-use std::{env};
+use std::env;
 
 use crossterm::{
 	execute,
-	terminal::{
-		disable_raw_mode, enable_raw_mode,
-		EnterAlternateScreen, LeaveAlternateScreen
-	}
+	terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen}
 };
-use ffp::{
-	tui::Tui
-};
-use futures_util::{FutureExt, StreamExt};
+use ffp::tui::Tui;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use ratatui_image::picker::Picker;
 use tracing::error;

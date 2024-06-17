@@ -730,6 +730,7 @@ dependencies = [
  "glib",
  "image",
  "itertools 0.13.0",
+ "magic",
  "notify",
  "nucleo-matcher",
  "pathdiff",
@@ -1351,6 +1352,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3262e75e648fce39813cb56ac41f3c3e3f65217ebf3844d818d1f9398cfb0dc"
 dependencies = [
  "hashbrown 0.14.5",
+]
+
+[[package]]
+name = "magic"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a200ae03df8c3dce7a963f6eeaac8feb41bf9001cb7e5ab22e3205aec2f0373d"
+dependencies = [
+ "bitflags 2.5.0",
+ "libc",
+ "magic-sys",
+ "thiserror",
+]
+
+[[package]]
+name = "magic-sys"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eff86ae08895140d628119d407d568f3b657145ee8c265878064f717534bb3bc"
+dependencies = [
+ "libc",
+ "vcpkg",
 ]
 
 [[package]]
@@ -2527,6 +2550,12 @@ checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
 name = "vb64"
 version = "0.1.2"
 source = "git+https://github.com/lukaslihotzki/vb64?branch=update#01e791186f57982511a3bcfb0d2316010c1adef0"
+
+[[package]]
+name = "vcpkg"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "version-compare"
