@@ -6,23 +6,35 @@ use ratatui::{
 	Frame
 };
 
+pub mod attr;
 pub mod finder;
 pub mod input;
+pub mod preview;
 pub mod status;
 pub mod theme;
-pub mod fileinfo;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum NeedRedraw {
+pub enum RedrawP {
 	Yes,
-	No,
-	Unsure
+	No
+}
+
+impl RedrawP {
+	pub fn yes(&self) -> bool {
+		*self == Self::Yes
+	}
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ConsumeState {
-	Consumed,
-	NotConsumed
+pub enum ConsumeP {
+	Yes,
+	No
+}
+
+impl ConsumeP {
+	pub fn yes(&self) -> bool {
+		*self == Self::Yes
+	}
 }
 
 #[derive(Copy, Clone)]
@@ -102,15 +114,20 @@ pub fn rect_inside(min: Size, max: Size, r: Rect) -> Rect {
 pub trait Component {
 	type MsgIn;
 
-	fn draw(&self, f: &mut Frame) -> RResult<()>;
-	fn widget(&self) -> impl Widget;
+	fn draw(&mut self, f: &mut Frame, rect: &Rect, changed: bool) -> RResult<()>;
+	fn _widget(&self, rect: &Rect, changed: bool) -> impl Widget;
+
+	fn handle_msg(&mut self, _msg: Self::MsgIn) {}
+
+	fn handle_event(&mut self, _event: Event) -> (RedrawP, ConsumeP) {
+		(RedrawP::No, ConsumeP::No)
+	}
 
 	fn is_visible(&self) -> bool {
 		true
 	}
-	fn show(&mut self);
-	fn hide(&mut self);
 
-	fn handle_msg(&mut self, msg: Self::MsgIn);
-	fn handle_event(&mut self, event: Event) -> (NeedRedraw, ConsumeState);
+	fn show(&mut self) {}
+
+	fn hide(&mut self) {}
 }

@@ -1,7 +1,9 @@
 use std::{
 	borrow::Cow,
+	cell::RefCell,
+	rc::Rc,
 	sync::{
-		atomic::{AtomicBool, Ordering},
+		atomic::{AtomicU64, Ordering},
 		Arc, RwLock
 	},
 	thread
@@ -10,7 +12,6 @@ use std::{
 use crossterm::event::Event;
 use flume::Sender;
 use fuzzy_matcher::FuzzyMatcher;
-use glib::property::PropertyGet;
 use ratatui::{
 	layout::Rect,
 	text::{Line, Span},
@@ -21,7 +22,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use tracing::error;
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::{theme::SharedTheme, Component, ConsumeState, NeedRedraw};
+use super::{theme::SharedTheme, Component, ConsumeP, RedrawP};
 use crate::{
 	componment::{
 		scrollbar::{self, Orientation},
@@ -32,8 +33,6 @@ use crate::{
 
 #[derive(Debug)]
 pub enum FinderIn {
-	Up,
-	Down,
 	Clear,
 	Refresh,
 	ContentsExtend(Vec<FileInfo>),
@@ -41,21 +40,54 @@ pub enum FinderIn {
 }
 
 #[derive(Debug)]
+pub enum FinderMove {
+	Up,
+	Down,
+	Nil
+}
+
+#[derive(Debug)]
 pub enum FinderOut {
-	FilterResult(String, Vec<(usize, Option<Vec<usize>>)>),
+	FilterResult(String, FileterResultEnum),
 	Selected(FileInfo),
 	TotalCount(usize)
+}
+
+#[derive(Debug)]
+pub enum FileterResultEnum {
+	All(usize),
+	Vec(Arc<Vec<usize>>),
+	None
+}
+
+impl From<Vec<usize>> for FileterResultEnum {
+	fn from(value: Vec<usize>) -> Self {
+		Self::Vec(Arc::new(value))
+	}
+}
+
+impl FileterResultEnum {
+	pub fn len(&self) -> usize {
+		match self {
+			FileterResultEnum::All(count) => *count,
+			FileterResultEnum::Vec(vec) => vec.len(),
+			FileterResultEnum::None => 0
+		}
+	}
 }
 
 pub struct Finder {
 	out_tx: Sender<FinderOut>,
 	theme: SharedTheme,
-	rect: Rect,
-	query: String,
-	contents: Arc<RwLock<Vec<FileInfo>>>,
-	show_start: usize,
 	selection: Option<usize>,
-	filtered: Vec<(usize, Option<Vec<usize>>)>,
+	show_start: usize,
+	last_move: FinderMove,
+
+	cached_selection: Rc<RefCell<Option<FileInfo>>>,
+
+	contents: Arc<RwLock<Vec<FileInfo>>>,
+	query: String,
+	filtered: FileterResultEnum,
 	filter_worker: FilterWorker
 }
 
@@ -71,89 +103,123 @@ pub trait FinderItem: 'static {
 
 #[derive(Default)]
 struct FilterWorker {
-	filter_task_handler: Option<Arc<AtomicBool>>
+	filter_task_handler: Arc<AtomicU64>,
+	filter_result: Option<Arc<(String, Vec<usize>)>>
 }
 
 impl FilterWorker {
 	fn filter_start(&mut self, msg: FilterWorkerMsg) {
-		let handler = Arc::new(AtomicBool::new(false));
-		if let Some(task_handler) = &self.filter_task_handler.replace(handler.clone()) {
-			if !task_handler.load(Ordering::Relaxed) {
-				task_handler.swap(true, Ordering::Relaxed);
-			}
-		}
+		let handler = self.filter_task_handler.clone();
+		handler.fetch_add(1, Ordering::Relaxed);
 
 		let query = msg.query.clone();
 		let content = msg.contents.clone();
 		let sender = msg.out_tx.clone();
+		let filtered = self.filter_result.clone();
 
 		thread::spawn(move || {
+			let ticket = handler.load(Ordering::Relaxed);
 			let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
 			macro_rules! maybe_stop {
 				() => {
-					if handler.load(Ordering::Relaxed) {
+					if handler.load(Ordering::Relaxed) != ticket {
 						return;
 					}
 				};
 			}
 
-			if query.is_empty() {
-				let fr = content
-					.read()
-					.unwrap()
-					.iter()
-					.enumerate()
-					.map(|entry| (entry.0, None))
-					.collect::<Vec<(usize, Option<Vec<usize>>)>>();
+			macro_rules! maybe_stop2 {
+				() => {
+					if handler.load(Ordering::Relaxed) != ticket {
+						return None;
+					}
+				};
+			}
 
+			if query.is_empty() {
 				maybe_stop!();
 
 				sender
-					.send(FinderOut::FilterResult(query.clone(), fr))
+					.send(FinderOut::FilterResult(
+						query.clone(),
+						FileterResultEnum::All(content.read().unwrap().len())
+					))
 					.map_err(|err| error!("unable to send content extend msg: {}", err))
 					.ok();
 			} else {
-				let fr = content
-					.read()
-					.unwrap()
-					.par_iter()
-					.enumerate()
-					.filter_map(|(i, s)| {
-						matcher
-							.fuzzy_indices(s.line(), query.as_ref())
-							.map(|(score, indices)| (score, i, indices))
-					})
-					.map(|e| (e.1, Some(e.2.clone())))
-					.collect::<Vec<(usize, Option<Vec<usize>>)>>();
+				let content = content.read().unwrap();
+
+				let fr = if filtered.is_some()
+					&& query.contains(filtered.as_ref().unwrap().0.as_str())
+				{
+					filtered
+						.as_ref()
+						.unwrap()
+						.1
+						.par_iter()
+						.filter_map(|s| {
+							maybe_stop2!();
+							if let Some(line) = content.get(*s) {
+								matcher
+									.fuzzy_indices(line.line(), query.as_ref())
+									.map(|(score, indices)| (score, *s, indices))
+							} else {
+								None
+							}
+						})
+						.map(|e| e.1)
+						.collect::<Vec<usize>>()
+				} else {
+					content
+						.par_iter()
+						.enumerate()
+						.filter_map(|(i, s)| {
+							maybe_stop2!();
+							matcher
+								.fuzzy_indices(s.line(), query.as_ref())
+								.map(|(score, indices)| (score, i, indices))
+						})
+						.map(|e| e.1)
+						.collect::<Vec<usize>>()
+				};
+
 				maybe_stop!();
 
 				sender
-					.send(FinderOut::FilterResult(query.clone(), fr))
+					.send(FinderOut::FilterResult(query.clone(), fr.into()))
 					.map_err(|err| error!("unable to send content extend msg: {}", err))
 					.ok();
 			}
 		});
 	}
 }
-
 impl Finder {
-	pub fn new(theme: SharedTheme, rect: Rect, out_tx: Sender<FinderOut>) -> Finder {
+	pub fn new(theme: SharedTheme, out_tx: Sender<FinderOut>) -> Finder {
 		Self {
 			out_tx,
 			query: "".to_string(),
 			contents: Arc::new(RwLock::new(vec![])),
 			selection: Some(0),
-			filtered: vec![],
+			filtered: FileterResultEnum::All(0),
 			theme,
 			show_start: 0,
-			rect,
-			filter_worker: Default::default()
+			filter_worker: Default::default(),
+			cached_selection: Default::default(),
+			last_move: FinderMove::Nil
 		}
 	}
 
-	pub fn update_filter(&mut self, query: String, filter: Vec<(usize, Option<Vec<usize>>)>) {
+	pub fn update_filter(&mut self, query: String, filter: FileterResultEnum) {
 		if query == self.query {
 			self.filtered = filter;
+		}
+	}
+
+	fn filtered_len(&self) -> usize {
+		match &self.filtered {
+			FileterResultEnum::All(c) => *c,
+			FileterResultEnum::Vec(vec) => vec.len(),
+			FileterResultEnum::None => 0
 		}
 	}
 
@@ -171,36 +237,24 @@ impl Finder {
 		self.filter_start();
 
 		self.selection = Some(0);
-		self.show_start = 0;
 	}
 
-	fn move_selection(&mut self, move_type: FinderIn) -> bool {
+	fn move_selection(&mut self, move_type: FinderMove) -> bool {
 		let new_selection = match move_type {
-			FinderIn::Up => self.selection.map(|e| e.saturating_sub(1)),
-			FinderIn::Down => self.selection.map(|e| e.saturating_add(1)),
+			FinderMove::Up => self.selection.map(|e| e.saturating_sub(1)),
+			FinderMove::Down => self.selection.map(|e| e.saturating_add(1)),
 			_ => {
 				return false;
 			}
 		}
 		.unwrap_or(usize::MAX);
 
-		let new_selection = new_selection.clamp(0, self.filtered.len().saturating_sub(1));
+		let new_selection = new_selection.clamp(0, self.filtered_len().saturating_sub(1));
 
 		if new_selection != self.selection.unwrap_or(usize::MAX) {
 			self.selection = Some(new_selection);
-
-			match move_type {
-				FinderIn::Up =>
-					if self.selection.unwrap_or(0) <= self.show_start {
-						self.show_start = self.show_start.saturating_sub(1);
-					},
-				FinderIn::Down =>
-					if self.selection.unwrap_or(0) >= self.show_start + self.rect.height as usize {
-						self.show_start = self.show_start.saturating_add(1);
-					},
-				_ => {}
-			}
 		}
+
 		true
 	}
 }
@@ -208,16 +262,44 @@ impl Finder {
 impl Component for Finder {
 	type MsgIn = FinderIn;
 
-	fn draw(&self, f: &mut Frame) -> chin_tools::wrapper::anyhow::RResult<()> {
-		let widget = self.widget();
-		f.render_widget(widget, self.rect.clone());
-		let list_height = self.rect.height as usize;
+	fn draw(
+		&mut self,
+		f: &mut Frame,
+		rect: &Rect,
+		changed: bool
+	) -> chin_tools::wrapper::anyhow::RResult<()> {
+		let list_height = rect.height as usize;
+		let selection_num = self.selection.unwrap_or(0);
 
-		if self.filtered.len() > list_height {
+		if selection_num == 0 {
+			self.selection = Some(0);
+			self.show_start = 0;
+		}
+
+		if selection_num - self.show_start > list_height {
+			self.show_start = selection_num - self.show_start;
+		} else {
+			match self.last_move {
+				FinderMove::Up =>
+					if selection_num <= self.show_start + 3 {
+						self.show_start = self.show_start.saturating_sub(1);
+					},
+				FinderMove::Down =>
+					if selection_num >= self.show_start + rect.height as usize - 3 {
+						self.show_start = self.show_start.saturating_add(1);
+					},
+				_ => {}
+			}
+		}
+
+		let widget = self._widget(rect, changed);
+		f.render_widget(widget, rect.clone());
+
+		if self.filtered_len() > list_height {
 			scrollbar::draw_scrollbar(
 				f,
-				self.rect.clone(),
-				self.filtered.len().saturating_sub(1),
+				rect.clone(),
+				self.filtered_len().saturating_sub(1),
 				self.selection.unwrap_or(0),
 				Orientation::Vertical
 			);
@@ -226,37 +308,61 @@ impl Component for Finder {
 		Ok(())
 	}
 
-	fn widget(&self) -> impl ratatui::prelude::Widget {
-		let area = self.rect.clone();
-
-		let height = usize::from(area.height);
-		let width = usize::from(area.width);
+	fn _widget(&self, rect: &Rect, _changed: bool) -> impl ratatui::prelude::Widget {
+		let height = usize::from(rect.height);
 
 		let scroll_skip = self.show_start;
+		let selection = self.selection;
+		let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
 
-		let items = self
-			.filtered
+		let page: Vec<(usize, usize)> = match &self.filtered {
+			FileterResultEnum::All(_) => self
+				.contents
+				.read()
+				.unwrap()
+				.iter()
+				.enumerate()
+				.skip(scroll_skip)
+				.take(height)
+				.map(|(id, _)| (id, id))
+				.collect(),
+			FileterResultEnum::Vec(vec) => vec
+				.clone()
+				.iter()
+				.enumerate()
+				.skip(scroll_skip)
+				.take(height)
+				.map(|(id, idx)| (id, *idx))
+				.collect(),
+			FileterResultEnum::None => vec![]
+		};
+
+		let items = page
 			.iter()
-			.enumerate()
-			.skip(scroll_skip)
-			.take(height)
-			.map(move |(id, (idx, indices))| {
-				let selected = self.selection.map_or(false, |index| index == id);
+			.map(move |(id, idx)| {
+				let selected = selection.map_or(false, |index| index == *id);
+				let binding = self.contents.read().unwrap();
 				if selected {
-					let selected = self.contents.read().unwrap().get(*idx).map(|e| e.clone());
+					let selected = binding.get(*idx).map(|e| e.clone());
 					if let Some(selected) = selected {
-						self.out_tx.send(FinderOut::Selected(selected)).unwrap();
+						let mut cached = self.cached_selection.borrow_mut();
+						let ofi = cached.as_ref();
+						if ofi.map_or(true, |fi| *fi != selected) {
+							self.out_tx
+								.send(FinderOut::Selected(selected.clone()))
+								.unwrap();
+							cached.replace(selected.clone());
+						}
 					}
 				}
 
-				let binding = self.contents.read().unwrap();
+				let line = binding[*idx].line();
+				let full_text = line;
+				let trim_length = line.graphemes(true).count() - full_text.graphemes(true).count();
 
-				let full_text =
-					chin_tools::utils::stringutils::trim_length_left(&binding[*idx].line(), width);
-				let trim_length = self.contents.read().unwrap()[*idx]
-					.line()
-					.graphemes(true)
-					.count() - full_text.graphemes(true).count();
+				let indices = matcher
+					.fuzzy_indices(line, &self.query)
+					.map(|(_, indices)| indices);
 				Line::from(
 					full_text
 						.graphemes(true)
@@ -274,16 +380,13 @@ impl Component for Finder {
 						})
 						.collect::<Vec<_>>()
 				)
-			});
+			})
+			.collect::<Vec<Line>>();
 
-		ScrollableList::new(items).block(Block::default().borders(Borders::RIGHT))
+		ScrollableList::new(items.into_iter()).block(Block::default().borders(Borders::RIGHT))
 	}
 
-	fn show(&mut self) {}
-
-	fn hide(&mut self) {}
-
-	fn handle_event(&mut self, event: Event) -> (NeedRedraw, ConsumeState) {
+	fn handle_event(&mut self, event: Event) -> (RedrawP, ConsumeP) {
 		match event {
 			Event::Key(key) => {
 				/* 				if key.modifiers != KeyModifiers::NONE || key.modifiers != KeyModifiers::SHIFT {
@@ -292,17 +395,17 @@ impl Component for Finder {
 
 				match key.code {
 					crossterm::event::KeyCode::Up => {
-						self.move_selection(FinderIn::Up);
-						(NeedRedraw::Yes, ConsumeState::Consumed)
+						self.move_selection(FinderMove::Up);
+						(RedrawP::Yes, ConsumeP::Yes)
 					}
 					crossterm::event::KeyCode::Down => {
-						self.move_selection(FinderIn::Down);
-						(NeedRedraw::Yes, ConsumeState::Consumed)
+						self.move_selection(FinderMove::Down);
+						(RedrawP::Yes, ConsumeP::Yes)
 					}
-					_ => (NeedRedraw::No, ConsumeState::NotConsumed)
+					_ => (RedrawP::No, ConsumeP::No)
 				}
 			}
-			_ => (NeedRedraw::No, ConsumeState::NotConsumed)
+			_ => (RedrawP::No, ConsumeP::No)
 		}
 	}
 
@@ -310,7 +413,7 @@ impl Component for Finder {
 		match msg {
 			FinderIn::Clear => {
 				self.contents.write().unwrap().clear();
-				self.filtered.clear();
+				self.filtered = FileterResultEnum::None;
 			}
 			FinderIn::Refresh => {}
 			FinderIn::ContentsExtend(adds) => {
@@ -321,8 +424,7 @@ impl Component for Finder {
 					.send(FinderOut::TotalCount(self.contents.read().unwrap().len()))
 					.unwrap();
 			}
-			FinderIn::Query(query) => self.update_query(query.as_str()),
-			_ => {}
+			FinderIn::Query(query) => self.update_query(query.as_str())
 		}
 	}
 }

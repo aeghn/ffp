@@ -4,9 +4,8 @@ use ratatui::{
 	layout::Rect,
 	widgets::{Paragraph, Widget}
 };
-use tracing::info;
 
-use super::{Component, ConsumeState, NeedRedraw};
+use super::{Component, ConsumeP, RedrawP};
 
 #[derive(Debug)]
 pub enum InputIn {
@@ -20,27 +19,32 @@ pub enum InputOut {
 	Input(String)
 }
 
+pub enum InputMove {
+	Start,
+	Left,
+	Right,
+	End,
+	Nil
+}
+
 pub struct Input {
 	out_tx: flume::Sender<InputOut>,
 	input: String,
+
 	cursor_position: usize,
 	show_start: usize,
-	rect: Rect
+	input_move: InputMove
 }
 
 impl Input {
-	pub fn new(rect: Rect, out_tx: Sender<InputOut>) -> Input {
+	pub fn new(out_tx: Sender<InputOut>) -> Input {
 		Input {
 			out_tx,
 			input: "".to_string(),
 			cursor_position: 0,
 			show_start: 0,
-			rect
+			input_move: InputMove::Nil
 		}
-	}
-
-	fn content_width(&self) -> u16 {
-		self.rect.width
 	}
 
 	fn send_input(&self) {
@@ -50,15 +54,11 @@ impl Input {
 	}
 
 	fn move_cursor_left(&mut self) {
-		info!("cursor_position {:?}", self.cursor_position);
 		self.cursor_position = self
 			.cursor_position
 			.saturating_sub(1)
 			.clamp(0, self.input.len());
-		info!("cursor_position {:?}", self.cursor_position);
-		if self.cursor_position <= self.show_start {
-			self.show_start = self.show_start.saturating_sub(1);
-		}
+		self.input_move = InputMove::Left;
 	}
 
 	fn move_cursor_right(&mut self) {
@@ -66,9 +66,7 @@ impl Input {
 			.cursor_position
 			.saturating_add(1)
 			.clamp(0, self.input.len());
-		if self.cursor_position >= self.show_start + self.content_width() as usize - 1 {
-			self.show_start = self.show_start.saturating_add(1);
-		}
+		self.input_move = InputMove::Right;
 	}
 
 	fn enter_char(&mut self, new_char: char) {
@@ -82,11 +80,9 @@ impl Input {
 		self.show_start = 0
 	}
 
-	fn move_end(&mut self) {
+	fn move_end(&mut self, width: usize) {
 		self.cursor_position = self.input.len() - 1;
-		self.show_start = self
-			.cursor_position
-			.saturating_sub(self.content_width() as usize)
+		self.show_start = self.cursor_position.saturating_sub(width as usize)
 	}
 
 	fn delete_char(&mut self) {
@@ -117,24 +113,53 @@ impl Input {
 
 impl Component for Input {
 	type MsgIn = InputIn;
-	fn draw(&self, f: &mut ratatui::Frame) -> chin_tools::wrapper::anyhow::RResult<()> {
-		f.render_widget(self.widget(), self.rect.clone());
+	fn draw(
+		&mut self,
+		f: &mut ratatui::Frame,
+		rect: &Rect,
+		changed: bool
+	) -> chin_tools::wrapper::anyhow::RResult<()> {
+		let width = rect.width as usize;
+		match self.input_move {
+			InputMove::Start => {
+				self.move_start();
+			}
+			InputMove::Left =>
+				if self.cursor_position - self.show_start > width {
+					self.show_start = self.cursor_position.saturating_sub(width);
+				} else {
+					if self.cursor_position <= self.show_start {
+						self.show_start = self.show_start.saturating_sub(1);
+					}
+				},
+
+			InputMove::Right =>
+				if self.cursor_position - self.show_start > width {
+					self.show_start = self.cursor_position.saturating_sub(width);
+				} else {
+					if self.cursor_position >= self.show_start + rect.width as usize - 1 {
+						self.show_start = self.show_start.saturating_add(1);
+					}
+				},
+			InputMove::End => {
+				self.move_end(rect.width.into());
+			}
+			InputMove::Nil => {}
+		}
+
+		f.render_widget(self._widget(rect, changed), rect.clone());
 		f.set_cursor(
-			self.rect.x + (self.cursor_position - self.show_start) as u16,
-			self.rect.y
+			rect.x + (self.cursor_position - self.show_start) as u16,
+			rect.y
 		);
 		Ok(())
 	}
 
-	fn widget(&self) -> impl Widget {
+	fn _widget(&self, rect: &Rect, changed: bool) -> impl Widget {
 		Paragraph::new(&self.input[self.show_start..])
 	}
 
-	fn show(&mut self) {}
-
-	fn hide(&mut self) {}
-
-	fn handle_event(&mut self, event: Event) -> (NeedRedraw, ConsumeState) {
+	fn handle_event(&mut self, event: Event) -> (RedrawP, ConsumeP) {
 		match event {
 			Event::Key(key) => {
 				/* 				if key.modifiers != KeyModifiers::NONE || key.modifiers != KeyModifiers::SHIFT {
@@ -144,40 +169,34 @@ impl Component for Input {
 				match key.code {
 					crossterm::event::KeyCode::Backspace => {
 						self.delete_char();
-						(NeedRedraw::Yes, ConsumeState::Consumed)
+						(RedrawP::Yes, ConsumeP::Yes)
 					}
 					crossterm::event::KeyCode::Left => {
 						self.move_cursor_left();
-						(NeedRedraw::Yes, ConsumeState::Consumed)
+
+						(RedrawP::Yes, ConsumeP::Yes)
 					}
 					crossterm::event::KeyCode::Right => {
 						self.move_cursor_right();
-						(NeedRedraw::Yes, ConsumeState::Consumed)
+
+						(RedrawP::Yes, ConsumeP::Yes)
 					}
 					crossterm::event::KeyCode::Home => {
-						self.move_start();
-						(NeedRedraw::Yes, ConsumeState::Consumed)
+						self.input_move = InputMove::Start;
+						(RedrawP::Yes, ConsumeP::Yes)
 					}
 					crossterm::event::KeyCode::End => {
-						self.move_end();
-						(NeedRedraw::Yes, ConsumeState::Consumed)
+						self.input_move = InputMove::End;
+						(RedrawP::Yes, ConsumeP::Yes)
 					}
 					crossterm::event::KeyCode::Char(c) => {
 						self.enter_char(c);
-						(NeedRedraw::Yes, ConsumeState::Consumed)
+						(RedrawP::Yes, ConsumeP::Yes)
 					}
-					_ => (NeedRedraw::No, ConsumeState::NotConsumed)
+					_ => (RedrawP::No, ConsumeP::No)
 				}
 			}
-			_ => (NeedRedraw::No, ConsumeState::NotConsumed)
-		}
-	}
-
-	fn handle_msg(&mut self, msg: Self::MsgIn) {
-		match msg {
-			InputIn::Clear => {}
-			InputIn::WidthChange(_) => {}
-			InputIn::Event(_) => {}
+			_ => (RedrawP::No, ConsumeP::No)
 		}
 	}
 }

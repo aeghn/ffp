@@ -1,15 +1,24 @@
-use std::fs::Metadata;
+use std::{
+	fs::Metadata,
+	path::{Path, PathBuf}
+};
 
-use file_format::FileFormat;
 use magic::Cookie;
 use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub struct FileInfo {
-	pub path: String,
+	pathbuf: PathBuf,
+	pathstr: String,
 	show_start: usize,
 	pub desc: Option<String>,
 	pub metadata: Option<Metadata>
+}
+
+impl PartialEq for FileInfo {
+	fn eq(&self, other: &Self) -> bool {
+		self.pathbuf == other.pathbuf
+	}
 }
 
 fn diff_path(base: &str, total: &str) -> usize {
@@ -30,10 +39,13 @@ fn diff_path(base: &str, total: &str) -> usize {
 }
 
 impl FileInfo {
-	pub fn new(path: &str, base: &str, metadata: Option<Metadata>) -> Self {
+	pub fn new(path: PathBuf, base: &str, metadata: Option<Metadata>) -> Self {
+		let pathstr = path.as_os_str().to_string_lossy().to_string();
+		let show_start = diff_path(base, &pathstr);
 		Self {
-			path: path.to_string(),
-			show_start: diff_path(base, path),
+			pathstr,
+			pathbuf: path,
+			show_start,
 			desc: None,
 			metadata
 		}
@@ -45,11 +57,11 @@ impl FileInfo {
 		}
 
 		if let Some(cookie) = cookie {
-			self.desc = cookie.file(self.path.as_str()).ok();
+			self.desc = cookie.file(self.pathstr.as_str()).ok();
 		}
 	}
 
 	pub fn line(&self) -> &str {
-		&self.path[self.show_start..]
+		&self.pathstr[self.show_start..]
 	}
 }

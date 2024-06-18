@@ -1,6 +1,6 @@
 use ratatui::{layout::Rect, widgets::Paragraph};
 
-use super::{Component, ConsumeState, NeedRedraw};
+use super::{Component, ConsumeP, RedrawP};
 use crate::dirwalker::FindType;
 
 pub enum StatusIn {
@@ -16,19 +16,17 @@ pub struct Status {
 	show_type: FindType,
 	show_hide: bool,
 	total: usize,
-	filter_size: usize,
-	rect: Rect
+	filter_size: usize
 }
 
 impl Status {
-	pub fn new(cwd: &str, rect: Rect) -> Self {
+	pub fn new(cwd: &str) -> Self {
 		Self {
 			cwd: cwd.to_string(),
 			show_hide: Default::default(),
 			show_type: Default::default(),
 			filter_size: 0,
-			total: 0,
-			rect
+			total: 0
 		}
 	}
 
@@ -36,7 +34,7 @@ impl Status {
 		self.total = num;
 	}
 
-	pub fn set_filter(&mut self, num: usize) {
+	pub fn set_filter_count(&mut self, num: usize) {
 		self.filter_size = num;
 	}
 }
@@ -44,12 +42,17 @@ impl Status {
 impl Component for Status {
 	type MsgIn = StatusIn;
 
-	fn draw(&self, f: &mut ratatui::Frame) -> chin_tools::wrapper::anyhow::RResult<()> {
-		f.render_widget(self.widget(), self.rect.clone());
+	fn draw(
+		&mut self,
+		f: &mut ratatui::Frame,
+		rect: &Rect,
+		changed: bool
+	) -> chin_tools::wrapper::anyhow::RResult<()> {
+		f.render_widget(self._widget(rect, changed), rect.clone());
 		Ok(())
 	}
 
-	fn widget(&self) -> impl ratatui::prelude::Widget {
+	fn _widget(&self, rect: &Rect, changed: bool) -> impl ratatui::prelude::Widget {
 		let find_type = match self.show_type {
 			FindType::LS => "L",
 			FindType::FIND => "F"
@@ -58,17 +61,9 @@ impl Component for Status {
 		let hide_type = if self.show_hide { "[H]" } else { "" };
 
 		Paragraph::new(format!(
-			"[{}]{}({}/{}) {}",
+			"-- [{}]{} {}/{} {}",
 			find_type, hide_type, self.filter_size, self.total, self.cwd
 		))
-	}
-
-	fn show(&mut self) {
-		todo!()
-	}
-
-	fn hide(&mut self) {
-		todo!()
 	}
 
 	fn handle_msg(&mut self, msg: Self::MsgIn) {
@@ -89,12 +84,5 @@ impl Component for Status {
 				self.filter_size = f;
 			}
 		}
-	}
-
-	fn handle_event(
-		&mut self,
-		event: crossterm::event::Event
-	) -> (super::NeedRedraw, super::ConsumeState) {
-		(NeedRedraw::No, ConsumeState::NotConsumed)
 	}
 }

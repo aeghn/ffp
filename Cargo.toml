@@ -65,6 +65,9 @@ tracing = "0.1.40"
 rayon = "1.10.0"
 pathdiff = "0.2.1"
 magic = "0.16.2"
+bitflags = "2.5.0"
+custom_error = "1.9.2"
+rstest = "0.21.0"
 
 
 [profile.production]

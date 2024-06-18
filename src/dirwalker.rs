@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use flume::Sender;
 use futures_util::StreamExt;
 use tracing::{error, warn};
@@ -6,8 +8,8 @@ use crate::{fileinfo::FileInfo, ui::finder::FinderIn};
 
 #[derive(Clone, Default)]
 pub enum FindType {
-	#[default]
 	LS,
+	#[default]
 	FIND
 }
 
@@ -53,7 +55,7 @@ pub fn rebuild_dirlist_start(sender: Sender<FinderIn>, cwd: &str, filter: DirFil
 }
 
 pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
-	let mut items: Vec<FileInfo> = vec![];
+	let mut items: Vec<FileInfo> = Vec::with_capacity(50000);
 	if let Err(err) = tx.send_async(FinderIn::Clear).await {
 		tracing::error!("unable to send clear msg, {}", err);
 	}
@@ -62,36 +64,33 @@ pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 			if let Ok(mut dir) = tokio::fs::read_dir(cwd).await {
 				while let Ok(Some(en)) = dir.next_entry().await {
 					let path = en.path();
-					match path.as_os_str().to_str() {
-						Some(path_str) => {
-							let info = FileInfo::new(path_str, cwd, path.metadata().ok());
-							items.push(info);
-							if items.len() > 200000 {
-								tx.send_async(FinderIn::ContentsExtend(items))
-									.await
-									.map_err(|err| {
-										error!("unable to send content extend msg: {}", err)
-									})
-									.ok();
-								items = vec![];
-							}
-						}
-						None => {}
+					let info = FileInfo::new(path, cwd, None);
+					items.push(info);
+					if items.len() > 50000 {
+						tx.send_async(FinderIn::ContentsExtend(items))
+							.await
+							.map_err(|err| error!("unable to send content extend msg: {}", err))
+							.ok();
+						items = Vec::with_capacity(50000);
 					}
 				}
 			},
 		FindType::FIND => {
 			let mut wd = async_walkdir::WalkDir::new(cwd);
-			while let Some(Ok(en)) = wd.next().await {
-				let path = en.path();
-				if let Some(path_str) = path.to_str() {
-					items.push(FileInfo::new(path_str, cwd, en.metadata().await.ok()));
-					if items.len() > 200000 {
-						tx.send_async(FinderIn::ContentsExtend(items))
-							.await
-							.map_err(|err| error!("unable to send content extend msg: {}", err))
-							.ok();
-						items = vec![];
+			while let Some(en) = wd.next().await {
+				match en {
+					Ok(de) => {
+						items.push(FileInfo::new(de.path(), cwd, None));
+						if items.len() > 50000 {
+							tx.send_async(FinderIn::ContentsExtend(items))
+								.await
+								.map_err(|err| error!("unable to send content extend msg: {}", err))
+								.ok();
+							items = Vec::with_capacity(50000);
+						}
+					}
+					Err(err) => {
+						error!("unable to read file, err: {}", err)
 					}
 				}
 			}

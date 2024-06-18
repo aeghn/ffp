@@ -1,25 +1,23 @@
 use std::{fs::Metadata, os::unix::fs::MetadataExt};
 
 use anyhow::Ok;
-use crossterm::style::Stylize;
-use file_format::FileFormat;
 use ratatui::{
 	layout::Rect,
 	style::Style,
-	text::{Line, Span, Text},
+	text::{Line, Span},
 	widgets::{Paragraph, Wrap}
 };
 
-use super::{Component, ConsumeState, NeedRedraw};
+use super::Component;
 
-pub struct FileSkim {
+pub struct FileAttr {
 	atime: String,
 	size: String,
 	desc: String,
 	rect: Rect
 }
 
-impl FileSkim {
+impl FileAttr {
 	pub fn new(metadata: Option<&Metadata>, file_format: Option<&String>, rect: Rect) -> Self {
 		Self {
 			atime: metadata
@@ -34,39 +32,30 @@ impl FileSkim {
 	}
 }
 
-impl Component for FileSkim {
+impl Component for FileAttr {
 	type MsgIn = ();
 
-	fn draw(&self, f: &mut ratatui::Frame) -> chin_tools::wrapper::anyhow::RResult<()> {
-		f.render_widget(self.widget(), self.rect.clone());
+	fn draw(
+		&mut self,
+		f: &mut ratatui::Frame,
+		rect: &Rect,
+		changed: bool
+	) -> chin_tools::wrapper::anyhow::RResult<()> {
+		f.render_widget(self._widget(rect, changed), self.rect.clone());
 		Ok(())
 	}
 
-	fn widget(&self) -> impl ratatui::prelude::Widget {
+	fn _widget(&self, rect: &Rect, changed: bool) -> impl ratatui::prelude::Widget {
 		Paragraph::new(Line::from(vec![
 			Span {
 				content: "Type: ".into(),
 				style: ratatui::style::Stylize::bold(Style::new())
 			},
-			self.desc.clone().into(),
+			Span {
+				content: self.desc.clone().into(),
+				style: ratatui::style::Stylize::italic(Style::new())
+			},
 		]))
 		.wrap(Wrap { trim: true })
-	}
-
-	fn show(&mut self) {
-		todo!()
-	}
-
-	fn hide(&mut self) {
-		todo!()
-	}
-
-	fn handle_msg(&mut self, msg: Self::MsgIn) {}
-
-	fn handle_event(
-		&mut self,
-		event: crossterm::event::Event
-	) -> (super::NeedRedraw, super::ConsumeState) {
-		(NeedRedraw::No, ConsumeState::NotConsumed)
 	}
 }
