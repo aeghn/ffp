@@ -8,7 +8,7 @@ use ratatui::{
 	widgets::{Paragraph, Wrap}
 };
 
-use super::Component;
+use crate::ui::Component;
 
 pub struct FileAttr {
 	atime: String,

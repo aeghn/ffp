@@ -6,7 +6,6 @@ use ratatui::{
 	Frame
 };
 
-pub mod attr;
 pub mod finder;
 pub mod input;
 pub mod preview;

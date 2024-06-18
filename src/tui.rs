@@ -116,12 +116,6 @@ impl Tui {
 
 		let mut changed_coms = ComponentEnum::all();
 
-		let cookie = magic::Cookie::open(magic::cookie::Flags::ERROR)?;
-
-		let database = Default::default();
-
-		let cookie = cookie.load(&database).ok();
-
 		Ok(loop {
 			let frame = term.get_frame();
 			let areas = Tui::layout(&frame);
@@ -147,17 +141,6 @@ impl Tui {
 						changed_coms.contains(ComponentEnum::STATUS)
 					)
 					.unwrap();
-
-				if let Some(file) = self.cur_file.as_mut() {
-					file.set_file_info(cookie.as_ref());
-					let mut fs = FileAttr::new(
-						file.metadata.as_ref(),
-						file.desc.as_ref(),
-						areas.info.clone()
-					);
-					fs.draw(f, &areas.info, changed_coms.contains(ComponentEnum::INFO))
-						.unwrap();
-				}
 			})?;
 
 			execute!(stdout(), EndSynchronizedUpdate)?;
