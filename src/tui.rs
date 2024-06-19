@@ -17,9 +17,9 @@ use crate::{
 	dirwalker::{self, DirFilter},
 	fileinfo::FileInfo,
 	ui::{
-		attr::FileAttr,
 		finder::{Finder, FinderIn},
 		input::Input,
+		preview::FileViewer,
 		status::Status,
 		theme::{SharedTheme, Theme},
 		Component, RedrawP
@@ -31,7 +31,6 @@ pub struct Areas {
 	pub finder: Rect,
 	pub status: Rect,
 	pub input: Rect,
-	pub info: Rect,
 	pub stage: Rect
 }
 
@@ -41,8 +40,7 @@ bitflags::bitflags! {
 		const FINDER = 0b0000_0001;
 		const STATUS = 0b0000_0010;
 		const INPUT = 0b0000_0100;
-		const INFO = 0b0000_1000;
-		const STAGE = 0b0001_0000;
+		const STAGE = 0b0000_1000;
 	}
 }
 
@@ -81,17 +79,12 @@ impl Tui {
 			])
 			.horizontal_margin(0)
 			.split(left_panel);
-		let rs = Layout::default()
-			.constraints([Constraint::Min(1), Constraint::Length(2)])
-			.horizontal_margin(0)
-			.split(right_panel);
 
 		Areas {
 			finder: ls[2],
 			status: ls[1],
 			input: ls[0],
-			info: rs[1],
-			stage: rs[0]
+			stage: right_panel
 		}
 	}
 
@@ -105,6 +98,9 @@ impl Tui {
 		let (finder_out_tx, finder_out_rx) = flume::unbounded();
 		let mut finder_out_rx = finder_out_rx.stream();
 
+		let (stage_out_tx, stage_out_rx) = flume::unbounded();
+		let mut stage_out_rx = stage_out_rx.stream();
+
 		let mut ev_stream = crossterm::event::EventStream::new();
 
 		let cwd = self.initial_wd.as_str();
@@ -113,6 +109,7 @@ impl Tui {
 		let mut input = Input::new(input_out_tx);
 		let mut finder = Finder::new(self.theme.clone(), finder_out_tx);
 		let mut status = Status::new(cwd);
+		let mut viewer = FileViewer::new(stage_out_tx);
 
 		let mut changed_coms = ComponentEnum::all();
 
@@ -141,6 +138,7 @@ impl Tui {
 						changed_coms.contains(ComponentEnum::STATUS)
 					)
 					.unwrap();
+				viewer.view(f, &areas.stage);
 			})?;
 
 			execute!(stdout(), EndSynchronizedUpdate)?;
@@ -200,14 +198,21 @@ impl Tui {
 							ComponentEnum::FINDER | ComponentEnum::STATUS
 						},
 						crate::ui::finder::FinderOut::Selected(selected) => {
-							self.cur_file.replace(selected.clone());
-							ComponentEnum::INFO
+							viewer.handle_file(&selected);
+							self.cur_file.replace(selected.clone().into());
+
+							ComponentEnum::STAGE
 						},
 						crate::ui::finder::FinderOut::TotalCount(count) => {
 							status.set_total(count);
 							ComponentEnum::STATUS
 						},
 					}
+				},
+				Some(ev) = stage_out_rx.next() => {
+					viewer.set_view(ev);
+
+					ComponentEnum::STAGE
 				}
 			};
 		})

@@ -28,14 +28,14 @@ use crate::{
 		scrollbar::{self, Orientation},
 		scrolllist::ScrollableList
 	},
-	fileinfo::FileInfo
+	fileinfo::FilePath
 };
 
 #[derive(Debug)]
 pub enum FinderIn {
 	Clear,
 	Refresh,
-	ContentsExtend(Vec<FileInfo>),
+	ContentsExtend(Vec<FilePath>),
 	Query(String)
 }
 
@@ -49,7 +49,7 @@ pub enum FinderMove {
 #[derive(Debug)]
 pub enum FinderOut {
 	FilterResult(String, FileterResultEnum),
-	Selected(FileInfo),
+	Selected(FilePath),
 	TotalCount(usize)
 }
 
@@ -83,9 +83,9 @@ pub struct Finder {
 	show_start: usize,
 	last_move: FinderMove,
 
-	cached_selection: Rc<RefCell<Option<FileInfo>>>,
+	cached_selection: Rc<RefCell<Option<FilePath>>>,
 
-	contents: Arc<RwLock<Vec<FileInfo>>>,
+	contents: Arc<RwLock<Vec<FilePath>>>,
 	query: String,
 	filtered: FileterResultEnum,
 	filter_worker: FilterWorker
@@ -93,7 +93,7 @@ pub struct Finder {
 
 struct FilterWorkerMsg {
 	query: String,
-	contents: Arc<RwLock<Vec<FileInfo>>>,
+	contents: Arc<RwLock<Vec<FilePath>>>,
 	out_tx: Sender<FinderOut>
 }
 

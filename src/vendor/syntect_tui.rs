@@ -71,9 +71,9 @@ custom_error! {
 /// Can return `SyntectTuiError::UnknownFontStyle` if the input [FontStyle](https://docs.rs/syntect/latest/syntect/highlighting/struct.FontStyle.html) is not supported.
 ///
 /// All explicit compositions of `BOLD`, `ITALIC` & `UNDERLINE` are supported, however, implicit bitflag coercions are not. For example, even though `FontStyle::from_bits(3)` is coerced to `Some(FontStyle::BOLD | FontStyle::ITALIC)`, we ignore this result as it would be a pain to handle all implicit coercions.
-pub fn into_span<'a>(
-	(style, content): (syntect::highlighting::Style, &'a str)
-) -> Result<ratatui::text::Span<'a>, SyntectTuiError> {
+pub fn into_span(
+	(style, content): (syntect::highlighting::Style, &str)
+) -> Result<ratatui::text::Span<'static>, SyntectTuiError> {
 	Ok(ratatui::text::Span::styled(
 		String::from(content),
 		translate_style(style)?

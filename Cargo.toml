@@ -24,6 +24,7 @@ name = "ffp"
 ratatui = { git = "https://github.com/itsjunetime/ratatui.git", features = [
     'serde',
     "crossterm",
+    "unstable-rendered-line-info",
 ] }
 # We're using this to have the vb64 feature (for faster base64 encoding, since that does take up a good bit of time when converting images to the Box<dyn ratatui_image::Protocol>. It also just includes a few more features that I'm waiting on main to upstream
 ratatui-image = { git = "https://github.com/itsjunetime/ratatui-image.git", branch = "vb64_on_personal", features = [
@@ -50,14 +51,14 @@ console-subscriber = { version = "0.3.0", optional = true }
 nucleo-matcher = "0.3.1"
 async-walkdir = "*"
 anyhow = "1.0.86"
+async-trait = "*"
 
 # Highlight
 syntect = "5.0"
 chin-tools = { path = "/home/chin/Projects/chin-tools" }
 easy-cast = "0.5.2"
-fuzzy-matcher = "*"
+fuzzy-matcher = "0.3.7"
 
-file-format = "*"
 unicode-segmentation = "1.11"
 tracing-appender = "0.2.3"
 tracing-subscriber = "0.3.18"
@@ -68,6 +69,9 @@ magic = "0.16.2"
 bitflags = "2.5.0"
 custom_error = "1.9.2"
 rstest = "0.21.0"
+tui = "0.19.0"
+human_bytes = { version = "0.4", features = ["fast"] }
+chrono = "0.4.38"
 
 
 [profile.production]

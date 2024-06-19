@@ -10,7 +10,6 @@ use super::{Component, ConsumeP, RedrawP};
 #[derive(Debug)]
 pub enum InputIn {
 	Clear,
-	WidthChange(usize),
 	Event(Event)
 }
 

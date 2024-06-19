@@ -1,18 +1,44 @@
-use std::path::Path;
+use std::{
+	path::Path,
+	sync::{
+		atomic::{AtomicUsize, Ordering},
+		Arc
+	}
+};
 
 use chin_tools::wrapper::anyhow::RResult;
-use syntect::parsing::{SyntaxReference, SyntaxSet};
+use ratatui::{
+	layout::{Constraint, Layout, Rect},
+	text::{Line, Span, Text},
+	widgets::{Paragraph, Wrap},
+	Frame
+};
+use syntect::{
+	easy::HighlightLines,
+	highlighting::ThemeSet,
+	parsing::{SyntaxReference, SyntaxSet},
+	util::LinesWithEndings
+};
 use tokio::{
 	fs::File,
 	io::{AsyncBufReadExt, BufReader}
 };
+
+use super::{ViewMsg, Viewer};
+use crate::{fileinfo::FileInfo, vendor::syntect_tui::into_span};
 
 pub struct TextHighlighter {
 	syntaxes: SyntaxSet
 }
 
 impl TextHighlighter {
-	// Copy from https://github.com/sxyazi/yazi/blob/main/yazi-plugin/src/external/highlighter.rs
+	fn new() -> Self {
+		Self {
+			syntaxes: Default::default()
+		}
+	}
+
+	// like https://github.com/sxyazi/yazi/blob/main/yazi-plugin/src/external/highlighter.rs
 	async fn detect_syntax(&self, filepath: &Path) -> RResult<&SyntaxReference> {
 		if let Some(filename) = filepath
 			.file_name()
@@ -40,9 +66,124 @@ impl TextHighlighter {
 			.ok_or_else(|| anyhow::anyhow!("No syntax found"))
 	}
 
-/* 	async fn view(&self, req: &super::ViewReq) -> RResult<impl ratatui::prelude::Widget> {
-		let style = self.detect_syntax(req.path.as_path()).await;
+	async fn translate(
+		&self,
+		filepath: &Path,
+		file_content: String
+	) -> RResult<Vec<Vec<ratatui::text::Span<'static>>>> {
+		match self.translate_style(filepath, file_content.as_str()).await {
+			Ok(vec) => Ok(vec),
+			Err(_) => Ok(self.translate_plain(&file_content))
+		}
+	}
 
-		if let Ok(style) = style {}
-	} */
+	fn translate_plain(&self, content: &str) -> Vec<Vec<ratatui::text::Span<'static>>> {
+		content
+			.split("\n")
+			.map(|line| {
+				vec![Span {
+					content: line.replace("\t", "  ").into(),
+					style: Default::default()
+				}]
+			})
+			.collect::<Vec<Vec<Span<'static>>>>()
+	}
+
+	async fn translate_style(
+		&self,
+		filepath: &Path,
+		content: &str
+	) -> RResult<Vec<Vec<ratatui::text::Span<'static>>>> {
+		let ps = SyntaxSet::load_defaults_newlines();
+		let ts = ThemeSet::load_defaults();
+		let syntax = self.detect_syntax(filepath).await?;
+		let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.light"]);
+		let mut lines: Vec<Vec<Span<'static>>> = vec![];
+
+		for line in LinesWithEndings::from(content) {
+			// LinesWithEndings enables use of newlines mode
+			let line_spans: Vec<ratatui::text::Span> = h
+				.highlight_line(line, &ps)
+				.unwrap()
+				.into_iter()
+				.filter_map(|(style, s)| into_span((style, s.replace("\t", "  ").as_str())).ok())
+				.collect();
+			lines.push(line_spans);
+		}
+
+		Ok(lines)
+	}
+}
+
+pub struct TextViewer {
+	highlighter: Arc<TextHighlighter>,
+	wrap: bool
+}
+
+impl TextViewer {
+	pub fn new() -> Self {
+		Self {
+			highlighter: Arc::new(TextHighlighter::new()),
+			wrap: false
+		}
+	}
+}
+
+impl Viewer for TextViewer {
+	fn reset(&mut self) {}
+
+	async fn handle_fileinfo(
+		&self,
+		fileinfo: FileInfo,
+		ticket: usize,
+		ticket_holder: Arc<AtomicUsize>,
+		text: Option<String>
+	) -> Option<ViewMsg> {
+		let text = self
+			.highlighter
+			.translate(fileinfo.path(), text.unwrap())
+			.await
+			.unwrap()
+			.into_iter()
+			.map(|spans| Line::from(spans))
+			.collect::<Text<'static>>();
+		let paragraph = if self.wrap {
+			Paragraph::new(text).wrap(Wrap::default())
+		} else {
+			Paragraph::new(text)
+		};
+
+		let attrs = Self::attrs(&fileinfo);
+
+		if ticket != ticket_holder.load(Ordering::Relaxed) {
+			None
+		} else {
+			Some(ViewMsg {
+				fileinfo,
+				body: super::ViewType::Text(paragraph),
+				attr: attrs
+			})
+		}
+	}
+
+	fn handle_event(&mut self, event: crossterm::event::Event) {}
+
+	fn draw(&self, view_msg: &ViewMsg, cursor: usize, f: &mut Frame, rect: &Rect) {
+		let attrs = view_msg.attr.as_ref();
+		let attrs_height = attrs
+			.as_ref()
+			.map(|e| e.line_count(rect.width))
+			.unwrap_or(0)
+			.clamp(0, 5) as u16;
+
+		let tb =
+			Layout::vertical([Constraint::Fill(1), Constraint::Max(attrs_height)]).split(*rect);
+
+		match &view_msg.body {
+			super::ViewType::Text(text) => f.render_widget(text.clone(), tb[0]),
+			_ => {}
+		}
+
+		attrs.map(|e| f.render_widget(e.clone(), tb[1]));
+	}
 }

@@ -39,8 +39,7 @@
                 }
             },
             "args": [],
-            "cwd": "${workspaceFolder}",
-"console": "externalTerminal"
+            "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",

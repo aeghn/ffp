@@ -3,21 +3,41 @@ use std::{
 	path::{Path, PathBuf}
 };
 
-use magic::Cookie;
 use tracing::warn;
 
 #[derive(Clone, Debug)]
-pub struct FileInfo {
-	pathbuf: PathBuf,
+pub struct FilePath {
+	pub pathbuf: PathBuf,
 	pathstr: String,
-	show_start: usize,
+	show_start: usize
+}
+
+impl Into<FileInfo> for FilePath {
+	fn into(self) -> FileInfo {
+		FileInfo {
+			path: self,
+			desc: None,
+			metadata: Err("empty".to_string())
+		}
+	}
+}
+
+#[derive(Clone, Debug)]
+pub struct FileInfo {
+	pub path: FilePath,
 	pub desc: Option<String>,
-	pub metadata: Option<Metadata>
+	pub metadata: Result<Metadata, String>
+}
+
+impl PartialEq for FilePath {
+	fn eq(&self, other: &Self) -> bool {
+		self.pathbuf == other.pathbuf
+	}
 }
 
 impl PartialEq for FileInfo {
 	fn eq(&self, other: &Self) -> bool {
-		self.pathbuf == other.pathbuf
+		self.path == other.path
 	}
 }
 
@@ -38,30 +58,28 @@ fn diff_path(base: &str, total: &str) -> usize {
 	}
 }
 
-impl FileInfo {
-	pub fn new(path: PathBuf, base: &str, metadata: Option<Metadata>) -> Self {
-		let pathstr = path.as_os_str().to_string_lossy().to_string();
+impl FilePath {
+	pub fn new(pathbuf: PathBuf, base: &str) -> Self {
+		let pathstr = pathbuf.as_os_str().to_string_lossy().to_string();
 		let show_start = diff_path(base, &pathstr);
-		Self {
+		FilePath {
 			pathstr,
-			pathbuf: path,
-			show_start,
-			desc: None,
-			metadata
+			pathbuf,
+			show_start
 		}
 	}
 
-	pub fn set_file_info(&mut self, cookie: Option<&Cookie<magic::cookie::Load>>) {
-		if self.desc.is_some() {
-			return;
-		}
-
-		if let Some(cookie) = cookie {
-			self.desc = cookie.file(self.pathstr.as_str()).ok();
-		}
+	pub fn path(&self) -> &Path {
+		&self.pathbuf
 	}
 
 	pub fn line(&self) -> &str {
 		&self.pathstr[self.show_start..]
+	}
+}
+
+impl FileInfo {
+	pub fn path(&self) -> &Path {
+		&self.path.path()
 	}
 }

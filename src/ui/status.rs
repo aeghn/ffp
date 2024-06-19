@@ -1,6 +1,6 @@
 use ratatui::{layout::Rect, widgets::Paragraph};
 
-use super::{Component, ConsumeP, RedrawP};
+use super::{Component};
 use crate::dirwalker::FindType;
 
 pub enum StatusIn {
