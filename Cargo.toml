@@ -1,28 +1,41 @@
 [package]
-name = "tdf"
+name = "ffp"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
-default-run = "tdf"
+default-run = "ffp"
 
 [[bin]]
-name = "tdf"
+name = "ffp"
 
 # lib only exists for benching
 [lib]
-name = "tdf"
+name = "ffp"
 
 [dependencies]
-poppler-rs = { version = "0.23.0", default-features = false, features = ["v23_7"] }
-cairo-rs = { version = "0.19.4", default-features = false, features = ["png"] }
+#poppler-rs = { version = "0.23.0", default-features = false, features = [
+#    "v23_7",
+#] }
+#cairo-rs = { version = "0.19.4", default-features = false, features = ["png"] }
+
 # we're using this branch because it has significant performance fixes that I'm waiting on responses from the upstream devs to get upstreamed. See https://github.com/ratatui-org/ratatui/issues/1116
-ratatui = { git = "https://github.com/itsjunetime/ratatui.git" }
-# ratatui = { path = "./ratatui" }
+ratatui = { git = "https://github.com/itsjunetime/ratatui.git", features = [
+    'serde',
+    "crossterm",
+    "unstable-rendered-line-info",
+] }
 # We're using this to have the vb64 feature (for faster base64 encoding, since that does take up a good bit of time when converting images to the Box<dyn ratatui_image::Protocol>. It also just includes a few more features that I'm waiting on main to upstream
-ratatui-image = { git = "https://github.com/itsjunetime/ratatui-image.git", branch = "vb64_on_personal", features = ["rustix", "vb64"], default-features = false }
-# ratatui-image = { path = "./ratatui-image", features = ["rustix", "vb64"], default-features = false }
+ratatui-image = { git = "https://github.com/itsjunetime/ratatui-image.git", branch = "vb64_on_personal", features = [
+    "rustix",
+    "vb64",
+], default-features = false }
+
+
 crossterm = { version = "0.27.0", features = ["event-stream"] }
-image = { version = "0.25.1", features = ["png", "rayon"], default-features = false }
+image = { version = "0.25.1", features = [
+    "png",
+    "rayon",
+], default-features = false }
 notify = "6.1.1"
 tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }
 futures-util = { version = "0.3.30", default-features = false }
@@ -31,7 +44,33 @@ itertools = "*"
 flume = { version = "0.11.0", default-features = false, features = ["async"] }
 
 # for tracing with tokio-console
-console-subscriber = { version = "0.2.0", optional = true }
+console-subscriber = { version = "0.3.0", optional = true }
+
+nucleo-matcher = "0.3.1"
+async-walkdir = "*"
+anyhow = "1.0.86"
+async-trait = "*"
+
+# Highlight
+syntect = "5.0"
+chin-tools = { path = "/home/chin/Projects/chin-tools" }
+easy-cast = "0.5.2"
+fuzzy-matcher = "0.3.7"
+
+unicode-segmentation = "1.11"
+tracing-appender = "0.2.3"
+tracing-subscriber = "0.3.18"
+tracing = "0.1.40"
+rayon = "1.10.0"
+pathdiff = "0.2.1"
+magic = "0.16.2"
+bitflags = "2.5.0"
+custom_error = "1.9.2"
+rstest = "0.21.0"
+tui = "0.19.0"
+human_bytes = { version = "0.4", features = ["fast"] }
+chrono = "0.4.38"
+
 
 [profile.production]
 inherits = "release"
@@ -44,11 +83,3 @@ tracing = ["tokio/tracing", "dep:console-subscriber"]
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_tokio"] }
 cpuprofiler = "0.0.4"
-
-[[bench]]
-name = "rendering"
-harness = false
-
-[[bin]]
-name = "for_profiling"
-path = "./benches/for_profiling.rs"
