@@ -19,7 +19,7 @@ use ratatui::{
 	Frame
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
-use tracing::error;
+use tracing::{error, info};
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::{theme::SharedTheme, Component, ConsumeP, RedrawP};
@@ -39,7 +39,7 @@ pub enum FinderIn {
 	Query(String)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FinderMove {
 	Up,
 	Down,
@@ -240,6 +240,7 @@ impl Finder {
 	}
 
 	fn move_selection(&mut self, move_type: FinderMove) -> bool {
+		self.last_move = move_type.clone();
 		let new_selection = match move_type {
 			FinderMove::Up => self.selection.map(|e| e.saturating_sub(1)),
 			FinderMove::Down => self.selection.map(|e| e.saturating_add(1)),
@@ -251,7 +252,7 @@ impl Finder {
 
 		let new_selection = new_selection.clamp(0, self.filtered_len().saturating_sub(1));
 
-		if new_selection != self.selection.unwrap_or(usize::MAX) {
+		if self.selection.map_or(true, |e| new_selection != e) {
 			self.selection = Some(new_selection);
 		}
 
@@ -276,9 +277,6 @@ impl Component for Finder {
 			self.show_start = 0;
 		}
 
-		if selection_num - self.show_start > list_height {
-			self.show_start = selection_num - self.show_start;
-		} else {
 			match self.last_move {
 				FinderMove::Up =>
 					if selection_num <= self.show_start + 3 {
@@ -290,7 +288,6 @@ impl Component for Finder {
 					},
 				_ => {}
 			}
-		}
 
 		let widget = self._widget(rect, changed);
 		f.render_widget(widget, rect.clone());
@@ -341,9 +338,9 @@ impl Component for Finder {
 			.iter()
 			.map(move |(id, idx)| {
 				let selected = selection.map_or(false, |index| index == *id);
-				let binding = self.contents.read().unwrap();
+				let vec = self.contents.read().unwrap();
 				if selected {
-					let selected = binding.get(*idx).map(|e| e.clone());
+					let selected = vec.get(*idx).map(|e| e.clone());
 					if let Some(selected) = selected {
 						let mut cached = self.cached_selection.borrow_mut();
 						let ofi = cached.as_ref();
@@ -356,7 +353,7 @@ impl Component for Finder {
 					}
 				}
 
-				let line = binding[*idx].line();
+				let line = vec[*idx].line();
 				let full_text = line;
 				let trim_length = line.graphemes(true).count() - full_text.graphemes(true).count();
 
