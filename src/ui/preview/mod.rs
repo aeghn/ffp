@@ -117,8 +117,8 @@ impl FileViewer {
 			.as_ref()
 			.map_or(true, |(m, c)| m.fileinfo.path() == msg.fileinfo.path())
 		{
-		self.file.replace((msg, 0));
-	}
+			self.file.replace((msg, 0));
+		}
 	}
 
 	pub fn view(&mut self, frame: &mut Frame, rect: &Rect) {

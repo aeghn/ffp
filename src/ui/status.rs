@@ -47,7 +47,7 @@ impl Component for Status {
 		f: &mut ratatui::Frame,
 		rect: &Rect,
 		changed: bool
-	) -> chin_tools::wrapper::anyhow::RResult<()> {
+	) -> chin_tools::wrapper::anyhow::AResult<()> {
 		f.render_widget(self._widget(rect, changed), rect.clone());
 		Ok(())
 	}

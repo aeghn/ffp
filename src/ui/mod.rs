@@ -1,4 +1,4 @@
-use chin_tools::wrapper::anyhow::RResult;
+use chin_tools::wrapper::anyhow::AResult;
 use crossterm::event::Event;
 use ratatui::{
 	layout::{Constraint, Direction, Layout, Rect},
@@ -113,7 +113,7 @@ pub fn rect_inside(min: Size, max: Size, r: Rect) -> Rect {
 pub trait Component {
 	type MsgIn;
 
-	fn draw(&mut self, f: &mut Frame, rect: &Rect, changed: bool) -> RResult<()>;
+	fn draw(&mut self, f: &mut Frame, rect: &Rect, changed: bool) -> AResult<()>;
 	fn _widget(&self, rect: &Rect, changed: bool) -> impl Widget;
 
 	fn handle_msg(&mut self, _msg: Self::MsgIn) {}

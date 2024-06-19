@@ -1,15 +1,12 @@
-use std::{path::Path};
+use std::path::Path;
 
-use chin_tools::wrapper::anyhow::RResult;
+use chin_tools::wrapper::anyhow::AResult;
 use flume::Sender;
 use futures_util::StreamExt;
 use tokio::{fs::File, io::AsyncReadExt};
-use tracing::{error};
+use tracing::error;
 
-use crate::{
-	fileinfo::{FilePath},
-	ui::finder::FinderIn
-};
+use crate::{fileinfo::FilePath, ui::finder::FinderIn};
 
 #[derive(Clone, Default)]
 pub enum FindType {
@@ -108,7 +105,7 @@ pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 		.ok();
 }
 
-pub async fn read_first_n_chars(path: &Path, n: usize) -> RResult<String> {
+pub async fn read_first_n_chars(path: &Path, n: usize) -> AResult<String> {
 	let mut file = File::open(path).await?;
 
 	let mut buffer = vec![0u8; n];
@@ -120,7 +117,7 @@ pub async fn read_first_n_chars(path: &Path, n: usize) -> RResult<String> {
 	Ok(result)
 }
 
-pub async fn file_is_text(path: &Path) -> RResult<bool> {
+pub async fn file_is_text(path: &Path) -> AResult<bool> {
 	if !path.is_file() {
 		return Ok(false);
 	}

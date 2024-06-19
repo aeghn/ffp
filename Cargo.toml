@@ -13,13 +13,6 @@ name = "ffp"
 name = "ffp"
 
 [dependencies]
-
-#poppler-rs = { version = "0.23.0", default-features = false, features = [
-#    "v23_7",
-#] }
-#cairo-rs = { version = "0.19.4", default-features = false, features = ["png"] }
-
-
 # we're using this branch because it has significant performance fixes that I'm waiting on responses from the upstream devs to get upstreamed. See https://github.com/ratatui-org/ratatui/issues/1116
 ratatui = { git = "https://github.com/itsjunetime/ratatui.git", features = [
     'serde',

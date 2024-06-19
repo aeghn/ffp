@@ -1,6 +1,6 @@
 use std::io::{stdout, Stdout};
 
-use chin_tools::wrapper::anyhow::RResult;
+use chin_tools::wrapper::anyhow::AResult;
 use crossterm::{
 	event::Event,
 	execute,
@@ -88,7 +88,7 @@ impl Tui {
 		}
 	}
 
-	pub async fn run(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> RResult<()> {
+	pub async fn run(&mut self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> AResult<()> {
 		let (input_out_tx, input_out_rx) = flume::unbounded();
 		let mut input_out_rx = input_out_rx.stream();
 
@@ -191,7 +191,7 @@ impl Tui {
 				Some(ev) = finder_out_rx.next() => {
 					tracing::trace!("msg: finder out rx");
 					match ev {
-						crate::ui::finder::FinderOut::FilterResult(query, fr) => {
+						crate::ui::finder::FinderOut::FilteAResult(query, fr) => {
 							status.set_filter_count(fr.len());
 							finder.update_filter(query, fr);
 

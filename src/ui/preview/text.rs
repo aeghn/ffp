@@ -6,7 +6,7 @@ use std::{
 	}
 };
 
-use chin_tools::wrapper::anyhow::RResult;
+use chin_tools::wrapper::anyhow::AResult;
 use ratatui::{
 	layout::{Constraint, Layout, Rect},
 	text::{Line, Span, Text},
@@ -39,7 +39,7 @@ impl TextHighlighter {
 	}
 
 	// like https://github.com/sxyazi/yazi/blob/main/yazi-plugin/src/external/highlighter.rs
-	async fn detect_syntax(&self, filepath: &Path) -> RResult<&SyntaxReference> {
+	async fn detect_syntax(&self, filepath: &Path) -> AResult<&SyntaxReference> {
 		if let Some(filename) = filepath
 			.file_name()
 			.map(|e| e.to_string_lossy().to_string())
@@ -70,7 +70,7 @@ impl TextHighlighter {
 		&self,
 		filepath: &Path,
 		file_content: String
-	) -> RResult<Vec<Vec<ratatui::text::Span<'static>>>> {
+	) -> AResult<Vec<Vec<ratatui::text::Span<'static>>>> {
 		match self.translate_style(filepath, file_content.as_str()).await {
 			Ok(vec) => Ok(vec),
 			Err(_) => Ok(self.translate_plain(&file_content))
@@ -93,7 +93,7 @@ impl TextHighlighter {
 		&self,
 		filepath: &Path,
 		content: &str
-	) -> RResult<Vec<Vec<ratatui::text::Span<'static>>>> {
+	) -> AResult<Vec<Vec<ratatui::text::Span<'static>>>> {
 		let ps = SyntaxSet::load_defaults_newlines();
 		let ts = ThemeSet::load_defaults();
 		let syntax = self.detect_syntax(filepath).await?;

@@ -117,7 +117,7 @@ impl Component for Input {
 		f: &mut ratatui::Frame,
 		rect: &Rect,
 		changed: bool
-	) -> chin_tools::wrapper::anyhow::RResult<()> {
+	) -> chin_tools::wrapper::anyhow::AResult<()> {
 		let width = rect.width as usize;
 		match self.input_move {
 			InputMove::Start => {

@@ -48,30 +48,30 @@ pub enum FinderMove {
 
 #[derive(Debug)]
 pub enum FinderOut {
-	FilterResult(String, FileterResultEnum),
+	FilteAResult(String, FileteAResultEnum),
 	Selected(FilePath),
 	TotalCount(usize)
 }
 
 #[derive(Debug)]
-pub enum FileterResultEnum {
+pub enum FileteAResultEnum {
 	All(usize),
 	Vec(Arc<Vec<usize>>),
 	None
 }
 
-impl From<Vec<usize>> for FileterResultEnum {
+impl From<Vec<usize>> for FileteAResultEnum {
 	fn from(value: Vec<usize>) -> Self {
 		Self::Vec(Arc::new(value))
 	}
 }
 
-impl FileterResultEnum {
+impl FileteAResultEnum {
 	pub fn len(&self) -> usize {
 		match self {
-			FileterResultEnum::All(count) => *count,
-			FileterResultEnum::Vec(vec) => vec.len(),
-			FileterResultEnum::None => 0
+			FileteAResultEnum::All(count) => *count,
+			FileteAResultEnum::Vec(vec) => vec.len(),
+			FileteAResultEnum::None => 0
 		}
 	}
 }
@@ -87,7 +87,7 @@ pub struct Finder {
 
 	contents: Arc<RwLock<Vec<FilePath>>>,
 	query: String,
-	filtered: FileterResultEnum,
+	filtered: FileteAResultEnum,
 	filter_worker: FilterWorker
 }
 
@@ -140,9 +140,9 @@ impl FilterWorker {
 				maybe_stop!();
 
 				sender
-					.send(FinderOut::FilterResult(
+					.send(FinderOut::FilteAResult(
 						query.clone(),
-						FileterResultEnum::All(content.read().unwrap().len())
+						FileteAResultEnum::All(content.read().unwrap().len())
 					))
 					.map_err(|err| error!("unable to send content extend msg: {}", err))
 					.ok();
@@ -186,7 +186,7 @@ impl FilterWorker {
 				maybe_stop!();
 
 				sender
-					.send(FinderOut::FilterResult(query.clone(), fr.into()))
+					.send(FinderOut::FilteAResult(query.clone(), fr.into()))
 					.map_err(|err| error!("unable to send content extend msg: {}", err))
 					.ok();
 			}
@@ -200,7 +200,7 @@ impl Finder {
 			query: "".to_string(),
 			contents: Arc::new(RwLock::new(vec![])),
 			selection: Some(0),
-			filtered: FileterResultEnum::All(0),
+			filtered: FileteAResultEnum::All(0),
 			theme,
 			show_start: 0,
 			filter_worker: Default::default(),
@@ -209,7 +209,7 @@ impl Finder {
 		}
 	}
 
-	pub fn update_filter(&mut self, query: String, filter: FileterResultEnum) {
+	pub fn update_filter(&mut self, query: String, filter: FileteAResultEnum) {
 		if query == self.query {
 			self.filtered = filter;
 		}
@@ -217,9 +217,9 @@ impl Finder {
 
 	fn filtered_len(&self) -> usize {
 		match &self.filtered {
-			FileterResultEnum::All(c) => *c,
-			FileterResultEnum::Vec(vec) => vec.len(),
-			FileterResultEnum::None => 0
+			FileteAResultEnum::All(c) => *c,
+			FileteAResultEnum::Vec(vec) => vec.len(),
+			FileteAResultEnum::None => 0
 		}
 	}
 
@@ -268,7 +268,7 @@ impl Component for Finder {
 		f: &mut Frame,
 		rect: &Rect,
 		changed: bool
-	) -> chin_tools::wrapper::anyhow::RResult<()> {
+	) -> chin_tools::wrapper::anyhow::AResult<()> {
 		let list_height = rect.height as usize;
 		let selection_num = self.selection.unwrap_or(0);
 
@@ -277,17 +277,17 @@ impl Component for Finder {
 			self.show_start = 0;
 		}
 
-			match self.last_move {
-				FinderMove::Up =>
-					if selection_num <= self.show_start + 3 {
-						self.show_start = self.show_start.saturating_sub(1);
-					},
-				FinderMove::Down =>
-					if selection_num >= self.show_start + rect.height as usize - 3 {
-						self.show_start = self.show_start.saturating_add(1);
-					},
-				_ => {}
-			}
+		match self.last_move {
+			FinderMove::Up =>
+				if selection_num <= self.show_start + 3 {
+					self.show_start = self.show_start.saturating_sub(1);
+				},
+			FinderMove::Down =>
+				if selection_num >= self.show_start + rect.height as usize - 3 {
+					self.show_start = self.show_start.saturating_add(1);
+				},
+			_ => {}
+		}
 
 		let widget = self._widget(rect, changed);
 		f.render_widget(widget, rect.clone());
@@ -313,7 +313,7 @@ impl Component for Finder {
 		let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
 
 		let page: Vec<(usize, usize)> = match &self.filtered {
-			FileterResultEnum::All(_) => self
+			FileteAResultEnum::All(_) => self
 				.contents
 				.read()
 				.unwrap()
@@ -323,7 +323,7 @@ impl Component for Finder {
 				.take(height)
 				.map(|(id, _)| (id, id))
 				.collect(),
-			FileterResultEnum::Vec(vec) => vec
+			FileteAResultEnum::Vec(vec) => vec
 				.clone()
 				.iter()
 				.enumerate()
@@ -331,7 +331,7 @@ impl Component for Finder {
 				.take(height)
 				.map(|(id, idx)| (id, *idx))
 				.collect(),
-			FileterResultEnum::None => vec![]
+			FileteAResultEnum::None => vec![]
 		};
 
 		let items = page
@@ -410,7 +410,7 @@ impl Component for Finder {
 		match msg {
 			FinderIn::Clear => {
 				self.contents.write().unwrap().clear();
-				self.filtered = FileterResultEnum::None;
+				self.filtered = FileteAResultEnum::None;
 			}
 			FinderIn::Refresh => {}
 			FinderIn::ContentsExtend(adds) => {
