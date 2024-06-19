@@ -79,6 +79,8 @@ impl FileViewer {
 			.map_or(false, |e| e.0.fileinfo.path() == fileinfo.path())
 		{
 			return;
+		} else {
+			self.file.take();
 		}
 
 		let mut fileinfo: FileInfo = fileinfo.clone().into();
@@ -110,7 +112,13 @@ impl FileViewer {
 	}
 
 	pub fn set_view(&mut self, msg: ViewMsg) {
+		if self
+			.file
+			.as_ref()
+			.map_or(true, |(m, c)| m.fileinfo.path() == msg.fileinfo.path())
+		{
 		self.file.replace((msg, 0));
+	}
 	}
 
 	pub fn view(&mut self, frame: &mut Frame, rect: &Rect) {
@@ -145,12 +153,12 @@ pub trait Viewer {
 		let mut vec = Vec::new();
 		if let Ok(md) = fi.metadata.as_ref() {
 			vec.push(tui_line(
-				"Size",
+				"Size: ",
 				human_bytes::human_bytes(md.len() as f64).as_str()
 			));
 			if let Some(t) = DateTime::from_timestamp(md.mtime(), 0) {
 				vec.push(tui_line(
-					"MTime",
+					"MTime: ",
 					t.naive_local()
 						.format("%Y-%m-%d %H:%M:%S")
 						.to_string()
@@ -160,7 +168,7 @@ pub trait Viewer {
 		}
 
 		match fi.desc.as_ref() {
-			Some(desc) => vec.push(tui_line("Type", &desc)),
+			Some(desc) => vec.push(tui_line("Type: ", &desc)),
 			None => {}
 		};
 
