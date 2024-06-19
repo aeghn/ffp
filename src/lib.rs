@@ -1,6 +1,15 @@
-#![feature(if_let_guard)]
+use std::sync::Arc;
 
-pub mod converter;
-pub mod renderer;
-pub mod skip;
+use dirwalker::FindType;
+
+pub mod componment;
+pub mod dirwalker;
+pub mod fileinfo;
 pub mod tui;
+pub mod ui;
+pub mod vendor;
+
+pub struct AppState {
+	pub option: Arc<String>,
+	pub show_mode: FindType
+}
