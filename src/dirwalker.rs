@@ -1,15 +1,12 @@
-use std::{path::Path};
+use std::path::Path;
 
 use chin_tools::wrapper::anyhow::RResult;
 use flume::Sender;
 use futures_util::StreamExt;
 use tokio::{fs::File, io::AsyncReadExt};
-use tracing::{error};
+use tracing::error;
 
-use crate::{
-	fileinfo::{FilePath},
-	ui::finder::FinderIn
-};
+use crate::{fileinfo::FilePath, ui::finder::FinderIn};
 
 #[derive(Clone, Default)]
 pub enum FindType {
@@ -106,6 +103,35 @@ pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 		.await
 		.map_err(|err| error!("unable to send content extend msg: {}", err))
 		.ok();
+}
+
+pub async fn read_dir2<F>(cwd: &Path, cancel: F) -> RResult<(Vec<String>, usize)>
+where
+	F: Fn() -> bool
+{
+	let mut dir = tokio::fs::read_dir(cwd).await?;
+	let mut count = 0;
+	let mut result = vec![];
+	while let en = dir.next_entry().await {
+		if cancel() {
+			tracing::info!("cancelled");
+			break;
+		}
+
+		match en {
+			Ok(None) => {
+				break;
+			}
+			Ok(Some(de)) => {
+				result.push(de.file_name().to_string_lossy().to_string());
+				count += 1;
+			}
+			Err(_) => {
+				count += 1;
+			}
+		}
+	}
+	Ok((result, count))
 }
 
 pub async fn read_first_n_chars(path: &Path, n: usize) -> RResult<String> {

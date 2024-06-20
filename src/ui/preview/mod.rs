@@ -8,6 +8,7 @@ use std::{
 
 use chrono::DateTime;
 use crossterm::event::Event;
+use dir::DirViewer;
 use flume::Sender;
 use magic::{cookie::Load, Cookie};
 use ratatui::{
@@ -24,11 +25,12 @@ use crate::{
 	fileinfo::{FileInfo, FilePath}
 };
 
+pub mod dir;
 pub mod text;
 
 pub enum ViewType {
 	Text(Paragraph<'static>),
-	Directory,
+	Directory(Vec<Line<'static>>),
 	Unknown
 }
 
@@ -41,6 +43,8 @@ pub struct ViewMsg {
 pub struct FileViewer {
 	file: Option<(ViewMsg, usize)>,
 	text_viewer: Arc<TextViewer>,
+	dir_viewer: Arc<DirViewer>,
+
 	magic: Option<Arc<Cookie<Load>>>,
 	ticket: Arc<AtomicUsize>,
 	out_tx: Sender<ViewMsg>
@@ -65,6 +69,7 @@ impl FileViewer {
 		Self {
 			file: None,
 			text_viewer: Arc::new(TextViewer::new()),
+			dir_viewer: Arc::new(DirViewer::new()),
 			magic: cookie,
 			ticket: Arc::new(AtomicUsize::new(0)),
 			out_tx
@@ -90,22 +95,37 @@ impl FileViewer {
 		let sender = self.out_tx.clone();
 		let ticket_holder = self.ticket.clone();
 		let text_handler = self.text_viewer.clone();
+		let dir_walker = self.dir_viewer.clone();
 
 		tokio::spawn(async move {
 			let ticket = ticket_holder.load(Ordering::Relaxed);
 			let mut fileinfo = fileinfo;
 			fileinfo.metadata = fileinfo.path.pathbuf.metadata().map_err(|e| e.to_string());
 
-			let msg = match read_first_n_chars(fileinfo.path(), 5000).await {
-				Ok(text) =>
-					text_handler
-						.handle_fileinfo(fileinfo, ticket, ticket_holder, Some(text))
-						.await,
-				Err(_) => None
-			};
+			match &fileinfo.metadata {
+				Ok(metadata) => {
+					let msg = if metadata.is_dir() {
+						dir_walker
+							.handle_fileinfo(fileinfo, ticket, ticket_holder, None)
+							.await
+					} else if metadata.is_file() {
+						match read_first_n_chars(fileinfo.path(), 5000).await {
+							Ok(text) =>
+								text_handler
+									.handle_fileinfo(fileinfo, ticket, ticket_holder, Some(text))
+									.await,
+							Err(_) => None
+						}
+					} else {
+						None
+					};
 
-			if let Some(msg) = msg {
-				sender.send(msg);
+					if let Some(msg) = msg {
+						sender.send(msg);
+					}
+				}
+
+				Err(err) => {}
 			}
 		});
 	}
@@ -123,10 +143,10 @@ impl FileViewer {
 	pub fn view(&mut self, frame: &mut Frame, rect: &Rect) {
 		if let Some((msg, cursor)) = self.file.as_ref() {
 			match &msg.body {
-				ViewType::Text(text) => {
+				ViewType::Text(_) => {
 					self.text_viewer.draw(msg, *cursor, frame, rect);
 				}
-				ViewType::Directory => {}
+				ViewType::Directory(_) => self.dir_viewer.draw(msg, *cursor, frame, rect),
 				ViewType::Unknown => {}
 			}
 		}
@@ -147,35 +167,35 @@ pub trait Viewer {
 	fn handle_event(&mut self, event: Event);
 
 	fn draw(&self, view_msg: &ViewMsg, show_cursor: usize, f: &mut Frame, rect: &Rect);
+}
 
-	fn attrs(fi: &FileInfo) -> Option<Paragraph<'static>> {
-		let mut vec = Vec::new();
-		if let Ok(md) = fi.metadata.as_ref() {
+fn regular_file_attrs(fi: &FileInfo) -> Option<Paragraph<'static>> {
+	let mut vec = Vec::new();
+	if let Ok(md) = fi.metadata.as_ref() {
+		vec.push(tui_line(
+			"Size: ",
+			human_bytes::human_bytes(md.len() as f64).as_str()
+		));
+		if let Some(t) = DateTime::from_timestamp(md.mtime(), 0) {
 			vec.push(tui_line(
-				"Size: ",
-				human_bytes::human_bytes(md.len() as f64).as_str()
+				"MTime: ",
+				t.naive_local()
+					.format("%Y-%m-%d %H:%M:%S")
+					.to_string()
+					.as_str()
 			));
-			if let Some(t) = DateTime::from_timestamp(md.mtime(), 0) {
-				vec.push(tui_line(
-					"MTime: ",
-					t.naive_local()
-						.format("%Y-%m-%d %H:%M:%S")
-						.to_string()
-						.as_str()
-				));
-			}
 		}
+	}
 
-		match fi.desc.as_ref() {
-			Some(desc) => vec.push(tui_line("Type: ", &desc)),
-			None => {}
-		};
+	match fi.desc.as_ref() {
+		Some(desc) => vec.push(tui_line("Type: ", &desc)),
+		None => {}
+	};
 
-		if vec.is_empty() {
-			None
-		} else {
-			Some(Paragraph::new(Text::from(vec)).wrap(Wrap { trim: true }))
-		}
+	if vec.is_empty() {
+		None
+	} else {
+		Some(Paragraph::new(Text::from(vec)).wrap(Wrap { trim: true }))
 	}
 }
 

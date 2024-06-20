@@ -70,14 +70,14 @@ impl TextHighlighter {
 		&self,
 		filepath: &Path,
 		file_content: String
-	) -> RResult<Vec<Vec<ratatui::text::Span<'static>>>> {
+	) -> RResult<Vec<Vec<Span<'static>>>> {
 		match self.translate_style(filepath, file_content.as_str()).await {
 			Ok(vec) => Ok(vec),
 			Err(_) => Ok(self.translate_plain(&file_content))
 		}
 	}
 
-	fn translate_plain(&self, content: &str) -> Vec<Vec<ratatui::text::Span<'static>>> {
+	fn translate_plain(&self, content: &str) -> Vec<Vec<Span<'static>>> {
 		content
 			.split("\n")
 			.map(|line| {
@@ -93,7 +93,7 @@ impl TextHighlighter {
 		&self,
 		filepath: &Path,
 		content: &str
-	) -> RResult<Vec<Vec<ratatui::text::Span<'static>>>> {
+	) -> RResult<Vec<Vec<Span<'static>>>> {
 		let ps = SyntaxSet::load_defaults_newlines();
 		let ts = ThemeSet::load_defaults();
 		let syntax = self.detect_syntax(filepath).await?;
@@ -102,7 +102,7 @@ impl TextHighlighter {
 
 		for line in LinesWithEndings::from(content) {
 			// LinesWithEndings enables use of newlines mode
-			let line_spans: Vec<ratatui::text::Span> = h
+			let line_spans: Vec<Span> = h
 				.highlight_line(line, &ps)
 				.unwrap()
 				.into_iter()
@@ -153,7 +153,7 @@ impl Viewer for TextViewer {
 			Paragraph::new(text)
 		};
 
-		let attrs = Self::attrs(&fileinfo);
+		let attrs = super::regular_file_attrs(&fileinfo);
 
 		if ticket != ticket_holder.load(Ordering::Relaxed) {
 			None

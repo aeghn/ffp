@@ -19,7 +19,7 @@ use ratatui::{
 	Frame
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
-use tracing::{error, info};
+use tracing::error;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::{theme::SharedTheme, Component, ConsumeP, RedrawP};
