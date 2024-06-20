@@ -42,14 +42,14 @@ pub enum FinderIn {
 
 #[derive(Debug, Clone)]
 pub enum FinderMove {
-	Up,
-	Down
+	Prev,
+	Next
 }
 
 #[derive(Debug)]
 pub enum FinderOut {
 	FilterResult(String, FileterResultEnum),
-	Selected(FilePath),
+	Selected(Option<FilePath>),
 	TotalCount(usize)
 }
 
@@ -235,14 +235,12 @@ impl Finder {
 		self.query = query.to_string();
 
 		self.filter_start();
-
-		self.selection = Some(0);
 	}
 
 	fn move_selection(&mut self, move_type: FinderMove) -> bool {
 		let new_selection = match &move_type {
-			FinderMove::Up => self.selection.map(|e| e.saturating_sub(1)),
-			FinderMove::Down => self.selection.map(|e| e.saturating_add(1))
+			FinderMove::Prev => self.selection.map(|e| e.saturating_sub(1)),
+			FinderMove::Next => self.selection.map(|e| e.saturating_add(1))
 		};
 
 		self.last_move.replace(move_type);
@@ -268,14 +266,18 @@ impl Component for Finder {
 		if selection_num == 0 {
 			self.selection = Some(0);
 			self.show_start = 0;
+		} else if selection_num.saturating_sub(self.show_start) > list_height
+			|| self.show_start.saturating_sub(selection_num) > list_height
+		{
+			self.show_start = selection_num.saturating_sub(list_height).saturating_add(1)
 		}
 
 		match self.last_move.take() {
-			Some(FinderMove::Up) =>
+			Some(FinderMove::Prev) =>
 				if selection_num <= self.show_start.saturating_add(3) {
 					self.show_start = self.show_start.saturating_sub(1);
 				},
-			Some(FinderMove::Down) =>
+			Some(FinderMove::Next) =>
 				if selection_num
 					>= self
 						.show_start
@@ -292,16 +294,20 @@ impl Component for Finder {
 
 		let widget = self._widget(rect, changed);
 		f.render_widget(widget, rect.clone());
+		let rect = Rect {
+			width: rect.width,
+			height: rect.height + 5,
+			x: rect.x,
+			y: rect.y - 1
+		};
 
-		if self.filtered_len() > list_height {
-			scrollbar::draw_scrollbar(
-				f,
-				rect.clone(),
-				self.filtered_len().saturating_sub(1),
-				self.selection.unwrap_or(0),
-				Orientation::Vertical
-			);
-		}
+		scrollbar::draw_scrollbar(
+			f,
+			rect,
+			self.filtered_len().saturating_sub(1),
+			self.selection.unwrap_or(0),
+			Orientation::Vertical
+		);
 
 		Ok(())
 	}
@@ -335,6 +341,21 @@ impl Component for Finder {
 			FileterResultEnum::None => vec![]
 		};
 
+		let replace_and_send = |selected: Option<FilePath>| {
+			let mut cached = self.cached_selection.borrow_mut();
+			let ofi = cached.as_ref();
+			if ofi != selected.as_ref() {
+				self.out_tx
+					.send(FinderOut::Selected(selected.clone()))
+					.unwrap();
+				*cached = selected.clone();
+			}
+		};
+
+		if page.is_empty() {
+			replace_and_send(None);
+		}
+
 		let items = page
 			.iter()
 			.map(move |(id, idx)| {
@@ -343,20 +364,16 @@ impl Component for Finder {
 				if selected {
 					let selected = vec.get(*idx).map(|e| e.clone());
 					if let Some(selected) = selected {
-						let mut cached = self.cached_selection.borrow_mut();
-						let ofi = cached.as_ref();
-						if ofi.map_or(true, |fi| *fi != selected) {
-							self.out_tx
-								.send(FinderOut::Selected(selected.clone()))
-								.unwrap();
-							cached.replace(selected.clone());
-						}
+						replace_and_send(Some(selected))
 					}
 				}
 
 				let line = vec[*idx].line();
 				let full_text = line;
-				let trim_length = line.graphemes(true).count() - full_text.graphemes(true).count();
+				let trim_length = line
+					.graphemes(true)
+					.count()
+					.saturating_sub(full_text.graphemes(true).count());
 
 				let indices = matcher
 					.fuzzy_indices(line, &self.query)
@@ -379,9 +396,10 @@ impl Component for Finder {
 						.collect::<Vec<_>>()
 				)
 			})
+			.rev()
 			.collect::<Vec<Line>>();
 
-		ScrollableList::new(items.into_iter()).block(Block::default().borders(Borders::RIGHT))
+		ScrollableList::new(items.into_iter()).block(Block::default())
 	}
 
 	fn handle_event(&mut self, event: &Event) -> EventHandleResult {
@@ -393,11 +411,11 @@ impl Component for Finder {
 
 				match key.code {
 					crossterm::event::KeyCode::Up => {
-						self.move_selection(FinderMove::Up);
+						self.move_selection(FinderMove::Next);
 						EventHandleResult::all()
 					}
 					crossterm::event::KeyCode::Down => {
-						self.move_selection(FinderMove::Down);
+						self.move_selection(FinderMove::Prev);
 						EventHandleResult::all()
 					}
 					_ => EventHandleResult::empty()

@@ -31,14 +31,13 @@ image = { version = "0.25.1", features = [
     "png",
     "rayon",
 ], default-features = false }
-notify = "6.1.1"
+notify = { version = "6.1.1", default-features = false, features = [
+    "macos_kqueue",
+] }
 tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }
 futures-util = { version = "0.3.30", default-features = false }
 itertools = "0.13.0"
 flume = { version = "0.11.0", default-features = false, features = ["async"] }
-
-# for tracing with tokio-console
-console-subscriber = { version = "0.3.0", optional = true }
 
 nucleo-matcher = "0.3.1"
 async-walkdir = "*"
@@ -56,14 +55,13 @@ tracing-subscriber = "0.3.18"
 tracing = "0.1.40"
 rayon = "1.10.0"
 pathdiff = "0.2.1"
-magic = "0.16.2"
 bitflags = "2.5.0"
 custom_error = "1.9.2"
 rstest = "0.21.0"
 
 human_bytes = { version = "0.4", features = ["fast"] }
 chrono = "0.4.38"
-
+filemagic = "0.12.3"
 
 [profile.production]
 inherits = "release"
@@ -71,7 +69,7 @@ lto = "fat"
 
 [features]
 default = []
-tracing = ["tokio/tracing", "dep:console-subscriber"]
+tracing = ["tokio/tracing"]
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_tokio"] }

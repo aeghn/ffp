@@ -73,17 +73,17 @@ impl Tui {
 
 		let ls = Layout::default()
 			.constraints([
+				Constraint::Min(1),
 				Constraint::Length(1),
-				Constraint::Length(1),
-				Constraint::Min(1)
+				Constraint::Length(1)
 			])
 			.horizontal_margin(0)
 			.split(left_panel);
 
 		Areas {
-			finder: ls[2],
+			finder: ls[0],
 			status: ls[1],
-			input: ls[0],
+			input: ls[2],
 			stage: right_panel
 		}
 	}
@@ -119,29 +119,35 @@ impl Tui {
 
 			if !changed_coms.is_empty() {
 				term.draw(|f| {
-					execute!(stdout(), BeginSynchronizedUpdate).unwrap();
-					input
-						.draw(f, &areas.input, changed_coms.contains(ComponentEnum::INPUT))
-						.unwrap();
+					let render_result: RResult<()> = (|| {
+						execute!(stdout(), BeginSynchronizedUpdate)?;
+						input.draw(f, &areas.input, changed_coms.contains(ComponentEnum::INPUT))?;
 
-					finder
-						.draw(
+						finder.draw(
 							f,
 							&areas.finder,
 							changed_coms.contains(ComponentEnum::FINDER)
-						)
-						.unwrap();
+						)?;
 
-					status
-						.draw(
+						status.draw(
 							f,
 							&areas.status,
 							changed_coms.contains(ComponentEnum::STATUS)
-						)
-						.unwrap();
-					viewer
-						.draw(f, &areas.stage, changed_coms.contains(ComponentEnum::STAGE))
-						.unwrap();
+						)?;
+						viewer.draw(
+							f,
+							&areas.stage,
+							changed_coms.contains(ComponentEnum::STAGE)
+						)?;
+						Ok(())
+					})();
+
+					match render_result {
+						Ok(_) => {}
+						Err(err) => {
+							tracing::error!("unable to render {}", err);
+						}
+					}
 				})?;
 
 				execute!(stdout(), EndSynchronizedUpdate)?;
@@ -149,7 +155,6 @@ impl Tui {
 
 			changed_coms = tokio::select! {
 				Some(ev) = ev_stream.next().fuse() => {
-					tracing::info!("msg: ev stream, {:?}", ev);
 					let mut redraw = ComponentEnum::empty();
 					if let Ok(ev) = ev {
 						if let Event::Key(key) = &ev {
@@ -211,8 +216,8 @@ impl Tui {
 							ComponentEnum::FINDER | ComponentEnum::STATUS
 						},
 						crate::app::finder::FinderOut::Selected(selected) => {
-							viewer.handle_file(&selected);
-							self.cur_file.replace(selected.clone().into());
+							viewer.handle_file(selected.as_ref());
+							self.cur_file = selected.map(|e| e.into());
 
 							ComponentEnum::STAGE
 						},

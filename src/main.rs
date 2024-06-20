@@ -12,11 +12,11 @@ use ratatui_image::picker::Picker;
 use tracing::error;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {	
 	let file_appender = tracing_appender::rolling::daily("/tmp/", "ffp.log");
 	let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 	tracing_subscriber::fmt().with_writer(non_blocking).init();
-
+	
 	let window_size = chin_tools::utils::termutils::get_window_size_px()?;
 
 	// We need to create `picker` on this thread because if we create it on the `renderer` thread,

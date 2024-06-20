@@ -9,8 +9,8 @@ use std::{
 use chrono::DateTime;
 use crossterm::event::{Event, KeyEvent, KeyModifiers};
 use dir::DirViewer;
+use filemagic::Magic;
 use flume::Sender;
-use magic::{cookie::Load, Cookie};
 use ratatui::{
 	prelude::Rect,
 	style::{Modifier, Style},
@@ -47,7 +47,7 @@ pub struct FileViewer {
 	text_viewer: Arc<TextViewer>,
 	dir_viewer: Arc<DirViewer>,
 
-	magic: Option<Arc<Cookie<Load>>>,
+	magic: Option<Arc<Magic>>,
 	ticket: Arc<AtomicUsize>,
 	out_tx: Sender<ViewMsg>
 }
@@ -56,7 +56,8 @@ pub struct FileViewer {
 enum FileInfoHandleErr {
 	TextReadErr(String),
 	Cancelled,
-	NotImplement
+	NotImplement,
+	Error(String)
 }
 
 impl Component for FileViewer {
@@ -100,8 +101,6 @@ impl Component for FileViewer {
 			self.file.as_mut().map(|e| e.1 = e.1.saturating_sub(1));
 		}
 
-		info!("{:?}", self.file);
-
 		EventHandleResult::all()
 	}
 }
@@ -109,30 +108,30 @@ impl Component for FileViewer {
 impl FileViewer {
 	pub fn new(out_tx: Sender<ViewMsg>) -> Self {
 		// open a new configuration with flags
-		let cookie = magic::Cookie::open(magic::cookie::Flags::ERROR)
-			.map(|cookie| {
-				// load the system's default database
-				let database = &Default::default();
-				cookie.load(database).ok()
-			})
-			.ok();
-		let cookie = match cookie {
-			Some(e) => e,
-			None => None
-		}
-		.map(|e| Arc::new(e));
+		let magic = filemagic::magic!().ok().map(|e| Arc::new(e));
 
 		Self {
 			file: None,
 			text_viewer: Arc::new(TextViewer::new()),
 			dir_viewer: Arc::new(DirViewer::new()),
-			magic: cookie,
+			magic,
 			ticket: Arc::new(AtomicUsize::new(0)),
 			out_tx
 		}
 	}
 
-	pub fn handle_file(&mut self, fileinfo: &FilePath) {
+	pub fn handle_file(&mut self, fileinfo: Option<&FilePath>) {
+		info!("handle file {:?}", fileinfo.map(|e| e.path()));
+		if let None = fileinfo {
+			if self.file.is_some() {
+				self.file.take();
+			}
+
+			return;
+		}
+
+		let fileinfo = fileinfo.unwrap();
+
 		if self
 			.file
 			.as_ref()
@@ -145,8 +144,9 @@ impl FileViewer {
 
 		let mut fileinfo: FileInfo = fileinfo.clone().into();
 
-		let magic = self.magic.clone();
-		magic.map(|m| fileinfo.desc = m.file(fileinfo.path()).ok());
+		if let Some(m) = self.magic.as_ref() {
+			fileinfo.desc = m.file(fileinfo.path()).ok();
+		}
 
 		let sender = self.out_tx.clone();
 		let ticket_holder = self.ticket.clone();

@@ -61,6 +61,8 @@ pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 	if let Err(err) = tx.send_async(FinderIn::Clear).await {
 		tracing::error!("unable to send clear msg, {}", err);
 	}
+	let mut initial = true;
+	
 	match filter.find_type {
 		FindType::LS =>
 			if let Ok(mut dir) = tokio::fs::read_dir(cwd).await {
@@ -68,12 +70,19 @@ pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 					let path = en.path();
 					let info = FilePath::new(path, cwd);
 					items.push(info);
-					if items.len() > 50000 {
+					if initial && items.len() > 200 {
 						tx.send_async(FinderIn::ContentsExtend(items))
 							.await
 							.map_err(|err| error!("unable to send content extend msg: {}", err))
 							.ok();
-						items = Vec::with_capacity(50000);
+						items = Vec::with_capacity(10000);
+						initial = false;
+					} else if items.len() > 10000 {
+						tx.send_async(FinderIn::ContentsExtend(items))
+							.await
+							.map_err(|err| error!("unable to send content extend msg: {}", err))
+							.ok();
+						items = Vec::with_capacity(10000);
 					}
 				}
 			},
@@ -83,12 +92,19 @@ pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 				match en {
 					Ok(de) => {
 						items.push(FilePath::new(de.path(), cwd));
-						if items.len() > 50000 {
+						if initial && items.len() > 200 {
 							tx.send_async(FinderIn::ContentsExtend(items))
 								.await
 								.map_err(|err| error!("unable to send content extend msg: {}", err))
 								.ok();
-							items = Vec::with_capacity(50000);
+							items = Vec::with_capacity(10000);
+							initial = false;
+						} else if items.len() > 10000 {
+							tx.send_async(FinderIn::ContentsExtend(items))
+								.await
+								.map_err(|err| error!("unable to send content extend msg: {}", err))
+								.ok();
+							items = Vec::with_capacity(10000);
 						}
 					}
 					Err(err) => {
