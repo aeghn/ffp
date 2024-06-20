@@ -94,25 +94,28 @@ impl FileViewer {
 
 		let sender = self.out_tx.clone();
 		let ticket_holder = self.ticket.clone();
+		let ticket = ticket_holder
+			.fetch_add(1, Ordering::Relaxed)
+			.wrapping_add(1);
+
+		let signal = move || ticket != ticket_holder.load(Ordering::Relaxed);
+
 		let text_handler = self.text_viewer.clone();
 		let dir_walker = self.dir_viewer.clone();
 
 		tokio::spawn(async move {
-			let ticket = ticket_holder.load(Ordering::Relaxed);
 			let mut fileinfo = fileinfo;
 			fileinfo.metadata = fileinfo.path.pathbuf.metadata().map_err(|e| e.to_string());
 
 			match &fileinfo.metadata {
 				Ok(metadata) => {
 					let msg = if metadata.is_dir() {
-						dir_walker
-							.handle_fileinfo(fileinfo, ticket, ticket_holder, None)
-							.await
+						dir_walker.handle_fileinfo(fileinfo, signal, None).await
 					} else if metadata.is_file() {
 						match read_first_n_chars(fileinfo.path(), 5000).await {
 							Ok(text) =>
 								text_handler
-									.handle_fileinfo(fileinfo, ticket, ticket_holder, Some(text))
+									.handle_fileinfo(fileinfo, signal, Some(text))
 									.await,
 							Err(_) => None
 						}
@@ -121,11 +124,11 @@ impl FileViewer {
 					};
 
 					if let Some(msg) = msg {
-						sender.send(msg);
+						let _ = sender.send_async(msg).await;
 					}
 				}
 
-				Err(err) => {}
+				Err(_) => {}
 			}
 		});
 	}
@@ -134,7 +137,7 @@ impl FileViewer {
 		if self
 			.file
 			.as_ref()
-			.map_or(true, |(m, c)| m.fileinfo.path() == msg.fileinfo.path())
+			.map_or(true, |(m, _)| m.fileinfo.path() == msg.fileinfo.path())
 		{
 			self.file.replace((msg, 0));
 		}
@@ -156,13 +159,14 @@ impl FileViewer {
 pub trait Viewer {
 	fn reset(&mut self);
 
-	async fn handle_fileinfo(
+	async fn handle_fileinfo<F>(
 		&self,
 		fileinfo: FileInfo,
-		ticket: usize,
-		ticket_holder: Arc<AtomicUsize>,
+		cancel_signal: F,
 		text: Option<String>
-	) -> Option<ViewMsg>;
+	) -> Option<ViewMsg>
+	where
+		F: Fn() -> bool + Clone;
 
 	fn handle_event(&mut self, event: Event);
 

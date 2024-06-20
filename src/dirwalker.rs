@@ -105,7 +105,7 @@ pub async fn walk_dir(tx: Sender<FinderIn>, cwd: &str, filter: DirFilter) {
 		.ok();
 }
 
-pub async fn read_dir2<F>(cwd: &Path, cancel: F) -> RResult<(Vec<String>, usize)>
+pub async fn read_dir2<F>(cwd: &Path, cancel: &F) -> RResult<(Vec<String>, usize)>
 where
 	F: Fn() -> bool
 {

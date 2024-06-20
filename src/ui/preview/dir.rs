@@ -29,18 +29,19 @@ impl DirViewer {
 impl Viewer for DirViewer {
 	fn reset(&mut self) {}
 
-	async fn handle_fileinfo(
+	async fn handle_fileinfo<F>(
 		&self,
 		fileinfo: FileInfo,
-		ticket: usize,
-		ticket_holder: Arc<AtomicUsize>,
-		_: Option<String>
-	) -> Option<ViewMsg> {
-		let signal = || ticket != ticket_holder.load(Ordering::Relaxed);
+		cancel_signal: F,
+		text: Option<String>
+	) -> Option<ViewMsg>
+	where
+		F: Fn() -> bool + Clone
+	{
 		let mut attr_vec = Vec::new();
 		let mut filenames = vec![];
 
-		let text = dirwalker::read_dir2(fileinfo.path.path(), signal).await;
+		let text = dirwalker::read_dir2(fileinfo.path.path(), &cancel_signal).await;
 		match text {
 			Ok((fns, count)) => {
 				attr_vec.push(tui_line("Size: ", format!("{}", count).as_str()));
@@ -71,7 +72,7 @@ impl Viewer for DirViewer {
 			None => {}
 		};
 
-		if ticket != ticket_holder.load(Ordering::Relaxed) {
+		if cancel_signal() {
 			None
 		} else {
 			Some(ViewMsg {

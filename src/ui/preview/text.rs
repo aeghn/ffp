@@ -132,13 +132,15 @@ impl TextViewer {
 impl Viewer for TextViewer {
 	fn reset(&mut self) {}
 
-	async fn handle_fileinfo(
+	async fn handle_fileinfo<F>(
 		&self,
 		fileinfo: FileInfo,
-		ticket: usize,
-		ticket_holder: Arc<AtomicUsize>,
+		cancel_signal: F,
 		text: Option<String>
-	) -> Option<ViewMsg> {
+	) -> Option<ViewMsg>
+	where
+		F: Fn() -> bool + Clone
+	{
 		let text = self
 			.highlighter
 			.translate(fileinfo.path(), text.unwrap())
@@ -155,7 +157,7 @@ impl Viewer for TextViewer {
 
 		let attrs = super::regular_file_attrs(&fileinfo);
 
-		if ticket != ticket_holder.load(Ordering::Relaxed) {
+		if cancel_signal() {
 			None
 		} else {
 			Some(ViewMsg {
