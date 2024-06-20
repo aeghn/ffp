@@ -9,6 +9,7 @@ use std::{
 	thread
 };
 
+use chin_tools::wrapper::anyhow::RResult;
 use crossterm::event::Event;
 use flume::Sender;
 use fuzzy_matcher::FuzzyMatcher;
@@ -19,10 +20,10 @@ use ratatui::{
 	Frame
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
-use tracing::error;
+use tracing::{error, info};
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::{theme::SharedTheme, Component, ConsumeP, RedrawP};
+use super::{theme::SharedTheme, Component, EventHandleResult};
 use crate::{
 	componment::{
 		scrollbar::{self, Orientation},
@@ -42,8 +43,7 @@ pub enum FinderIn {
 #[derive(Debug, Clone)]
 pub enum FinderMove {
 	Up,
-	Down,
-	Nil
+	Down
 }
 
 #[derive(Debug)]
@@ -81,7 +81,7 @@ pub struct Finder {
 	theme: SharedTheme,
 	selection: Option<usize>,
 	show_start: usize,
-	last_move: FinderMove,
+	last_move: Option<FinderMove>,
 
 	cached_selection: Rc<RefCell<Option<FilePath>>>,
 
@@ -205,7 +205,7 @@ impl Finder {
 			show_start: 0,
 			filter_worker: Default::default(),
 			cached_selection: Default::default(),
-			last_move: FinderMove::Nil
+			last_move: None
 		}
 	}
 
@@ -240,20 +240,18 @@ impl Finder {
 	}
 
 	fn move_selection(&mut self, move_type: FinderMove) -> bool {
-		self.last_move = move_type.clone();
-		let new_selection = match move_type {
+		let new_selection = match &move_type {
 			FinderMove::Up => self.selection.map(|e| e.saturating_sub(1)),
-			FinderMove::Down => self.selection.map(|e| e.saturating_add(1)),
-			_ => {
-				return false;
-			}
-		}
-		.unwrap_or(usize::MAX);
+			FinderMove::Down => self.selection.map(|e| e.saturating_add(1))
+		};
 
-		let new_selection = new_selection.clamp(0, self.filtered_len().saturating_sub(1));
+		self.last_move.replace(move_type);
 
-		if self.selection.map_or(true, |e| new_selection != e) {
-			self.selection = Some(new_selection);
+		let new_selection =
+			new_selection.map(|s| s.clamp(0, self.filtered_len().saturating_sub(1)));
+
+		if self.selection != new_selection {
+			self.selection = new_selection;
 		}
 
 		true
@@ -263,12 +261,7 @@ impl Finder {
 impl Component for Finder {
 	type MsgIn = FinderIn;
 
-	fn draw(
-		&mut self,
-		f: &mut Frame,
-		rect: &Rect,
-		changed: bool
-	) -> chin_tools::wrapper::anyhow::RResult<()> {
+	fn draw(&mut self, f: &mut Frame, rect: &Rect, changed: bool) -> RResult<()> {
 		let list_height = rect.height as usize;
 		let selection_num = self.selection.unwrap_or(0);
 
@@ -277,16 +270,24 @@ impl Component for Finder {
 			self.show_start = 0;
 		}
 
-		match self.last_move {
-			FinderMove::Up =>
-				if selection_num <= self.show_start + 3 {
+		match self.last_move.take() {
+			Some(FinderMove::Up) =>
+				if selection_num <= self.show_start.saturating_add(3) {
 					self.show_start = self.show_start.saturating_sub(1);
 				},
-			FinderMove::Down =>
-				if selection_num >= self.show_start + rect.height as usize - 3 {
+			Some(FinderMove::Down) =>
+				if selection_num
+					>= self
+						.show_start
+						.saturating_add(rect.height as usize)
+						.saturating_sub(3)
+				{
 					self.show_start = self.show_start.saturating_add(1);
 				},
-			_ => {}
+			_ =>
+				if selection_num <= self.show_start.saturating_add(3) {
+					self.show_start = self.show_start.saturating_sub(1);
+				},
 		}
 
 		let widget = self._widget(rect, changed);
@@ -383,26 +384,26 @@ impl Component for Finder {
 		ScrollableList::new(items.into_iter()).block(Block::default().borders(Borders::RIGHT))
 	}
 
-	fn handle_event(&mut self, event: Event) -> (RedrawP, ConsumeP) {
+	fn handle_event(&mut self, event: &Event) -> EventHandleResult {
 		match event {
 			Event::Key(key) => {
-				/* 				if key.modifiers != KeyModifiers::NONE || key.modifiers != KeyModifiers::SHIFT {
-					return false;
-				} */
+				if !key.modifiers.is_empty() {
+					return EventHandleResult::empty();
+				}
 
 				match key.code {
 					crossterm::event::KeyCode::Up => {
 						self.move_selection(FinderMove::Up);
-						(RedrawP::Yes, ConsumeP::Yes)
+						EventHandleResult::all()
 					}
 					crossterm::event::KeyCode::Down => {
 						self.move_selection(FinderMove::Down);
-						(RedrawP::Yes, ConsumeP::Yes)
+						EventHandleResult::all()
 					}
-					_ => (RedrawP::No, ConsumeP::No)
+					_ => EventHandleResult::empty()
 				}
 			}
-			_ => (RedrawP::No, ConsumeP::No)
+			_ => EventHandleResult::empty()
 		}
 	}
 

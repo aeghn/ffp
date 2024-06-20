@@ -12,27 +12,39 @@ pub mod preview;
 pub mod status;
 pub mod theme;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RedrawP {
-	Yes,
-	No
+#[derive(Default, Debug)]
+pub struct EventHandleResult {
+	pub redraw: bool,
+	pub consumed: bool
 }
 
-impl RedrawP {
-	pub fn yes(&self) -> bool {
-		*self == Self::Yes
+impl EventHandleResult {
+	fn all() -> Self {
+		Self {
+			redraw: true,
+			consumed: true
+		}
 	}
-}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ConsumeP {
-	Yes,
-	No
-}
+	fn empty() -> Self {
+		Self {
+			redraw: false,
+			consumed: false
+		}
+	}
 
-impl ConsumeP {
-	pub fn yes(&self) -> bool {
-		*self == Self::Yes
+	fn redraw() -> Self {
+		Self {
+			redraw: true,
+			consumed: false
+		}
+	}
+
+	fn consume() -> Self {
+		Self {
+			redraw: false,
+			consumed: true
+		}
 	}
 }
 
@@ -118,8 +130,8 @@ pub trait Component {
 
 	fn handle_msg(&mut self, _msg: Self::MsgIn) {}
 
-	fn handle_event(&mut self, _event: Event) -> (RedrawP, ConsumeP) {
-		(RedrawP::No, ConsumeP::No)
+	fn handle_event(&mut self, _event: &Event) -> EventHandleResult {
+		EventHandleResult::default()
 	}
 
 	fn is_visible(&self) -> bool {

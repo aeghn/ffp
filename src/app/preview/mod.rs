@@ -7,33 +7,35 @@ use std::{
 };
 
 use chrono::DateTime;
-use crossterm::event::Event;
+use crossterm::event::{Event, KeyEvent, KeyModifiers};
 use dir::DirViewer;
 use flume::Sender;
 use magic::{cookie::Load, Cookie};
 use ratatui::{
 	prelude::Rect,
-	style::Style,
+	style::{Modifier, Style},
 	text::{Line, Span, Text},
 	widgets::{Paragraph, Wrap},
 	Frame
 };
 use text::TextViewer;
+use tracing::info;
 
-use crate::{
-	dirwalker::read_first_n_chars,
-	fileinfo::{FileInfo, FilePath}
-};
+use super::{Component, EventHandleResult};
+use crate::fileinfo::{FileInfo, FilePath};
 
-pub mod dir;
-pub mod text;
+mod dir;
+mod image;
+mod text;
 
+#[derive(Debug)]
 pub enum ViewType {
 	Text(Paragraph<'static>),
 	Directory(Vec<Line<'static>>),
 	Unknown
 }
 
+#[derive(Debug)]
 pub struct ViewMsg {
 	pub fileinfo: FileInfo,
 	pub body: ViewType,
@@ -41,13 +43,67 @@ pub struct ViewMsg {
 }
 
 pub struct FileViewer {
-	file: Option<(ViewMsg, usize)>,
+	file: Option<(ViewMsg, u16)>,
 	text_viewer: Arc<TextViewer>,
 	dir_viewer: Arc<DirViewer>,
 
 	magic: Option<Arc<Cookie<Load>>>,
 	ticket: Arc<AtomicUsize>,
 	out_tx: Sender<ViewMsg>
+}
+
+#[derive(Clone, Debug)]
+enum FileInfoHandleErr {
+	TextReadErr(String),
+	Cancelled,
+	NotImplement
+}
+
+impl Component for FileViewer {
+	type MsgIn = String;
+
+	fn draw(
+		&mut self,
+		f: &mut Frame,
+		rect: &Rect,
+		changed: bool
+	) -> chin_tools::wrapper::anyhow::RResult<()> {
+		if let Some((msg, cursor)) = self.file.as_ref() {
+			match &msg.body {
+				ViewType::Text(_) => {
+					self.text_viewer.draw(msg, *cursor, f, rect);
+				}
+				ViewType::Directory(_) => self.dir_viewer.draw(msg, *cursor, f, rect),
+				ViewType::Unknown => {}
+			}
+		}
+
+		Ok(())
+	}
+
+	fn _widget(&self, _rect: &Rect, _changed: bool) -> impl ratatui::prelude::Widget {
+		Span::raw("")
+	}
+
+	fn handle_event(&mut self, _event: &Event) -> EventHandleResult {
+		if *_event
+			== Event::Key(KeyEvent::new(
+				crossterm::event::KeyCode::Down,
+				KeyModifiers::ALT
+			)) {
+			self.file.as_mut().map(|e| e.1 = e.1.saturating_add(1));
+		} else if *_event
+			== Event::Key(KeyEvent::new(
+				crossterm::event::KeyCode::Up,
+				KeyModifiers::ALT
+			)) {
+			self.file.as_mut().map(|e| e.1 = e.1.saturating_sub(1));
+		}
+
+		info!("{:?}", self.file);
+
+		EventHandleResult::all()
+	}
 }
 
 impl FileViewer {
@@ -110,20 +166,14 @@ impl FileViewer {
 			match &fileinfo.metadata {
 				Ok(metadata) => {
 					let msg = if metadata.is_dir() {
-						dir_walker.handle_fileinfo(fileinfo, signal, None).await
+						dir_walker.handle_fileinfo(fileinfo, signal).await
 					} else if metadata.is_file() {
-						match read_first_n_chars(fileinfo.path(), 5000).await {
-							Ok(text) =>
-								text_handler
-									.handle_fileinfo(fileinfo, signal, Some(text))
-									.await,
-							Err(_) => None
-						}
+						text_handler.handle_fileinfo(fileinfo, signal).await
 					} else {
-						None
+						Err(FileInfoHandleErr::NotImplement)
 					};
 
-					if let Some(msg) = msg {
+					if let Ok(msg) = msg {
 						let _ = sender.send_async(msg).await;
 					}
 				}
@@ -142,35 +192,20 @@ impl FileViewer {
 			self.file.replace((msg, 0));
 		}
 	}
-
-	pub fn view(&mut self, frame: &mut Frame, rect: &Rect) {
-		if let Some((msg, cursor)) = self.file.as_ref() {
-			match &msg.body {
-				ViewType::Text(_) => {
-					self.text_viewer.draw(msg, *cursor, frame, rect);
-				}
-				ViewType::Directory(_) => self.dir_viewer.draw(msg, *cursor, frame, rect),
-				ViewType::Unknown => {}
-			}
-		}
-	}
 }
 
-pub trait Viewer {
-	fn reset(&mut self);
-
+trait Viewer {
 	async fn handle_fileinfo<F>(
 		&self,
 		fileinfo: FileInfo,
-		cancel_signal: F,
-		text: Option<String>
-	) -> Option<ViewMsg>
+		cancel_signal: F
+	) -> Result<ViewMsg, FileInfoHandleErr>
 	where
 		F: Fn() -> bool + Clone;
 
 	fn handle_event(&mut self, event: Event);
 
-	fn draw(&self, view_msg: &ViewMsg, show_cursor: usize, f: &mut Frame, rect: &Rect);
+	fn draw(&self, view_msg: &ViewMsg, show_cursor: u16, f: &mut Frame, rect: &Rect);
 }
 
 fn regular_file_attrs(fi: &FileInfo) -> Option<Paragraph<'static>> {

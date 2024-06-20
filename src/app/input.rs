@@ -1,11 +1,13 @@
-use crossterm::event::Event;
+use chin_tools::wrapper::anyhow::RResult;
+use crossterm::event::{Event, KeyModifiers};
 use flume::Sender;
 use ratatui::{
 	layout::Rect,
 	widgets::{Paragraph, Widget}
 };
+use tracing::info;
 
-use super::{Component, ConsumeP, RedrawP};
+use super::{Component, EventHandleResult};
 
 #[derive(Debug)]
 pub enum InputIn {
@@ -112,12 +114,7 @@ impl Input {
 
 impl Component for Input {
 	type MsgIn = InputIn;
-	fn draw(
-		&mut self,
-		f: &mut ratatui::Frame,
-		rect: &Rect,
-		changed: bool
-	) -> chin_tools::wrapper::anyhow::RResult<()> {
+	fn draw(&mut self, f: &mut ratatui::Frame, rect: &Rect, changed: bool) -> RResult<()> {
 		let width = rect.width as usize;
 		match self.input_move {
 			InputMove::Start => {
@@ -154,48 +151,48 @@ impl Component for Input {
 		Ok(())
 	}
 
-	fn _widget(&self, rect: &Rect, changed: bool) -> impl Widget {
+	fn _widget(&self, _rect: &Rect, _changed: bool) -> impl Widget {
 		Paragraph::new(&self.input[self.show_start..])
 	}
 
-	fn handle_event(&mut self, event: Event) -> (RedrawP, ConsumeP) {
+	fn handle_event(&mut self, event: &Event) -> EventHandleResult {
 		match event {
 			Event::Key(key) => {
-				/* 				if key.modifiers != KeyModifiers::NONE || key.modifiers != KeyModifiers::SHIFT {
-					return false;
-				} */
+				if KeyModifiers::SHIFT.complement().intersects(key.modifiers) {
+					return EventHandleResult::empty();
+				}
 
 				match key.code {
 					crossterm::event::KeyCode::Backspace => {
 						self.delete_char();
-						(RedrawP::Yes, ConsumeP::Yes)
+						EventHandleResult::all()
 					}
 					crossterm::event::KeyCode::Left => {
 						self.move_cursor_left();
 
-						(RedrawP::Yes, ConsumeP::Yes)
+						EventHandleResult::all()
 					}
 					crossterm::event::KeyCode::Right => {
 						self.move_cursor_right();
 
-						(RedrawP::Yes, ConsumeP::Yes)
+						EventHandleResult::all()
 					}
 					crossterm::event::KeyCode::Home => {
 						self.input_move = InputMove::Start;
-						(RedrawP::Yes, ConsumeP::Yes)
+						EventHandleResult::all()
 					}
 					crossterm::event::KeyCode::End => {
 						self.input_move = InputMove::End;
-						(RedrawP::Yes, ConsumeP::Yes)
+						EventHandleResult::all()
 					}
 					crossterm::event::KeyCode::Char(c) => {
 						self.enter_char(c);
-						(RedrawP::Yes, ConsumeP::Yes)
+						EventHandleResult::all()
 					}
-					_ => (RedrawP::No, ConsumeP::No)
+					_ => EventHandleResult::empty()
 				}
 			}
-			_ => (RedrawP::No, ConsumeP::No)
+			_ => EventHandleResult::empty()
 		}
 	}
 }

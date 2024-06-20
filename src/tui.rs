@@ -2,7 +2,7 @@ use std::io::{stdout, Stdout};
 
 use chin_tools::wrapper::anyhow::RResult;
 use crossterm::{
-	event::Event,
+	event::{Event, KeyCode, KeyModifiers},
 	execute,
 	terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate}
 };
@@ -14,16 +14,16 @@ use ratatui::{
 };
 
 use crate::{
-	dirwalker::{self, DirFilter},
-	fileinfo::FileInfo,
-	ui::{
+	app::{
 		finder::{Finder, FinderIn},
 		input::Input,
 		preview::FileViewer,
 		status::Status,
 		theme::{SharedTheme, Theme},
-		Component, RedrawP
-	}
+		Component
+	},
+	dirwalker::{self, DirFilter},
+	fileinfo::FileInfo
 };
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Hash)]
@@ -117,54 +117,67 @@ impl Tui {
 			let frame = term.get_frame();
 			let areas = Tui::layout(&frame);
 
-			term.draw(|f| {
-				execute!(stdout(), BeginSynchronizedUpdate).unwrap();
-				input
-					.draw(f, &areas.input, changed_coms.contains(ComponentEnum::INPUT))
-					.unwrap();
+			if !changed_coms.is_empty() {
+				term.draw(|f| {
+					execute!(stdout(), BeginSynchronizedUpdate).unwrap();
+					input
+						.draw(f, &areas.input, changed_coms.contains(ComponentEnum::INPUT))
+						.unwrap();
 
-				finder
-					.draw(
-						f,
-						&areas.finder,
-						changed_coms.contains(ComponentEnum::FINDER)
-					)
-					.unwrap();
+					finder
+						.draw(
+							f,
+							&areas.finder,
+							changed_coms.contains(ComponentEnum::FINDER)
+						)
+						.unwrap();
 
-				status
-					.draw(
-						f,
-						&areas.status,
-						changed_coms.contains(ComponentEnum::STATUS)
-					)
-					.unwrap();
-				viewer.view(f, &areas.stage);
-			})?;
+					status
+						.draw(
+							f,
+							&areas.status,
+							changed_coms.contains(ComponentEnum::STATUS)
+						)
+						.unwrap();
+					viewer
+						.draw(f, &areas.stage, changed_coms.contains(ComponentEnum::STAGE))
+						.unwrap();
+				})?;
 
-			execute!(stdout(), EndSynchronizedUpdate)?;
+				execute!(stdout(), EndSynchronizedUpdate)?;
+			}
 
 			changed_coms = tokio::select! {
 				Some(ev) = ev_stream.next().fuse() => {
-					tracing::trace!("msg: ev stream");
-					let redraw = ComponentEnum::empty();
+					tracing::info!("msg: ev stream, {:?}", ev);
+					let mut redraw = ComponentEnum::empty();
 					if let Ok(ev) = ev {
-						if let Event::Key(key) = ev.clone() {
-							if key.code == crossterm::event::KeyCode::Esc {
+						if let Event::Key(key) = &ev {
+							if key.code == crossterm::event::KeyCode::Esc ||
+							(key.modifiers.contains(KeyModifiers::CONTROL) && match key.code {
+								KeyCode::Char('c') => true,
+								_ => false,
+							}) {
 								break
 							}
 						}
 
-						let res = input.handle_event(ev.clone());
-						if res.1.yes() {
-							if RedrawP::Yes == res.0 {
-								changed_coms = ComponentEnum::INPUT
+						let mut res = input.handle_event(&ev);
+						if res.redraw {
+							redraw |= ComponentEnum::INPUT
+						}
+
+						if !res.consumed {
+							res = finder.handle_event(&ev);
+							if res.redraw {
+								redraw |= ComponentEnum::FINDER
 							}
 						}
 
-						if !res.1.yes() {
-							let res = finder.handle_event(ev.clone());
-							if res.0.yes() {
-								changed_coms |= ComponentEnum::FINDER
+						if !res.consumed {
+							res = viewer.handle_event(&ev);
+							if res.redraw {
+								redraw |= ComponentEnum::FINDER
 							}
 						}
 					}
@@ -173,7 +186,7 @@ impl Tui {
 				},
 				Some(ev) = input_out_rx.next() => {
 					match ev {
-						crate::ui::input::InputOut::Input(input) => {
+						crate::app::input::InputOut::Input(input) => {
 							finder_in_tx.send(FinderIn::Query(input.clone()))
 							.map_err(|err| {
 								tracing::error!("unable to send Query msg: {}", err)
@@ -191,19 +204,19 @@ impl Tui {
 				Some(ev) = finder_out_rx.next() => {
 					tracing::trace!("msg: finder out rx");
 					match ev {
-						crate::ui::finder::FinderOut::FilterResult(query, fr) => {
+						crate::app::finder::FinderOut::FilterResult(query, fr) => {
 							status.set_filter_count(fr.len());
 							finder.update_filter(query, fr);
 
 							ComponentEnum::FINDER | ComponentEnum::STATUS
 						},
-						crate::ui::finder::FinderOut::Selected(selected) => {
+						crate::app::finder::FinderOut::Selected(selected) => {
 							viewer.handle_file(&selected);
 							self.cur_file.replace(selected.clone().into());
 
 							ComponentEnum::STAGE
 						},
-						crate::ui::finder::FinderOut::TotalCount(count) => {
+						crate::app::finder::FinderOut::TotalCount(count) => {
 							status.set_total(count);
 							ComponentEnum::STATUS
 						},

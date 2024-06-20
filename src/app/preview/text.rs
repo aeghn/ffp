@@ -1,10 +1,4 @@
-use std::{
-	path::Path,
-	sync::{
-		atomic::{AtomicUsize, Ordering},
-		Arc
-	}
-};
+use std::{path::Path, sync::Arc};
 
 use chin_tools::wrapper::anyhow::RResult;
 use ratatui::{
@@ -24,8 +18,8 @@ use tokio::{
 	io::{AsyncBufReadExt, BufReader}
 };
 
-use super::{ViewMsg, Viewer};
-use crate::{fileinfo::FileInfo, vendor::syntect_tui::into_span};
+use super::{FileInfoHandleErr, ViewMsg, Viewer};
+use crate::{dirwalker::read_first_n_chars, fileinfo::FileInfo, vendor::syntect_tui::into_span};
 
 pub struct TextHighlighter {
 	syntaxes: SyntaxSet
@@ -130,20 +124,22 @@ impl TextViewer {
 }
 
 impl Viewer for TextViewer {
-	fn reset(&mut self) {}
-
 	async fn handle_fileinfo<F>(
 		&self,
 		fileinfo: FileInfo,
-		cancel_signal: F,
-		text: Option<String>
-	) -> Option<ViewMsg>
+		cancel_signal: F
+	) -> Result<ViewMsg, FileInfoHandleErr>
 	where
 		F: Fn() -> bool + Clone
 	{
+		let text = match read_first_n_chars(fileinfo.path(), 5000).await {
+			Ok(content) => content,
+			Err(err) => return Err(FileInfoHandleErr::TextReadErr(err.to_string()))
+		};
+
 		let text = self
 			.highlighter
-			.translate(fileinfo.path(), text.unwrap())
+			.translate(fileinfo.path(), text)
 			.await
 			.unwrap()
 			.into_iter()
@@ -158,9 +154,9 @@ impl Viewer for TextViewer {
 		let attrs = super::regular_file_attrs(&fileinfo);
 
 		if cancel_signal() {
-			None
+			Err(FileInfoHandleErr::Cancelled)
 		} else {
-			Some(ViewMsg {
+			Ok(ViewMsg {
 				fileinfo,
 				body: super::ViewType::Text(paragraph),
 				attr: attrs
@@ -170,7 +166,7 @@ impl Viewer for TextViewer {
 
 	fn handle_event(&mut self, event: crossterm::event::Event) {}
 
-	fn draw(&self, view_msg: &ViewMsg, cursor: usize, f: &mut Frame, rect: &Rect) {
+	fn draw(&self, view_msg: &ViewMsg, cursor: u16, f: &mut Frame, rect: &Rect) {
 		let attrs = view_msg.attr.as_ref();
 		let attrs_height = attrs
 			.as_ref()
@@ -182,7 +178,11 @@ impl Viewer for TextViewer {
 			Layout::vertical([Constraint::Fill(1), Constraint::Max(attrs_height)]).split(*rect);
 
 		match &view_msg.body {
-			super::ViewType::Text(text) => f.render_widget(text.clone(), tb[0]),
+			super::ViewType::Text(text) => {
+				let text = text.clone().scroll((cursor as u16, 0));
+
+				f.render_widget(text, tb[0])
+			}
 			_ => {}
 		}
 

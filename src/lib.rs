@@ -6,7 +6,7 @@ pub mod componment;
 pub mod dirwalker;
 pub mod fileinfo;
 pub mod tui;
-pub mod ui;
+pub mod app;
 pub mod vendor;
 
 pub struct AppState {

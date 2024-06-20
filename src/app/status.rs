@@ -1,6 +1,7 @@
+use chin_tools::wrapper::anyhow::RResult;
 use ratatui::{layout::Rect, widgets::Paragraph};
 
-use super::{Component};
+use super::Component;
 use crate::dirwalker::FindType;
 
 pub enum StatusIn {
@@ -42,17 +43,12 @@ impl Status {
 impl Component for Status {
 	type MsgIn = StatusIn;
 
-	fn draw(
-		&mut self,
-		f: &mut ratatui::Frame,
-		rect: &Rect,
-		changed: bool
-	) -> chin_tools::wrapper::anyhow::RResult<()> {
+	fn draw(&mut self, f: &mut ratatui::Frame, rect: &Rect, changed: bool) -> RResult<()> {
 		f.render_widget(self._widget(rect, changed), rect.clone());
 		Ok(())
 	}
 
-	fn _widget(&self, rect: &Rect, changed: bool) -> impl ratatui::prelude::Widget {
+	fn _widget(&self, _rect: &Rect, _changed: bool) -> impl ratatui::prelude::Widget {
 		let find_type = match self.show_type {
 			FindType::LS => "L",
 			FindType::FIND => "F"

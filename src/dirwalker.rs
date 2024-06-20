@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use tokio::{fs::File, io::AsyncReadExt};
 use tracing::error;
 
-use crate::{fileinfo::FilePath, ui::finder::FinderIn};
+use crate::{app::finder::FinderIn, fileinfo::FilePath};
 
 #[derive(Clone, Default)]
 pub enum FindType {

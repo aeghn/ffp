@@ -1,10 +1,4 @@
-use std::{
-	os::unix::fs::MetadataExt,
-	sync::{
-		atomic::{AtomicUsize, Ordering},
-		Arc
-	}
-};
+use std::os::unix::fs::MetadataExt;
 
 use chrono::DateTime;
 use ratatui::{
@@ -15,7 +9,7 @@ use ratatui::{
 	Frame
 };
 
-use super::{tui_line, ViewMsg, Viewer};
+use super::{tui_line, FileInfoHandleErr, ViewMsg, Viewer};
 use crate::{dirwalker, fileinfo::FileInfo};
 
 pub struct DirViewer {}
@@ -27,14 +21,11 @@ impl DirViewer {
 }
 
 impl Viewer for DirViewer {
-	fn reset(&mut self) {}
-
 	async fn handle_fileinfo<F>(
 		&self,
 		fileinfo: FileInfo,
-		cancel_signal: F,
-		text: Option<String>
-	) -> Option<ViewMsg>
+		cancel_signal: F
+	) -> Result<ViewMsg, FileInfoHandleErr>
 	where
 		F: Fn() -> bool + Clone
 	{
@@ -73,9 +64,9 @@ impl Viewer for DirViewer {
 		};
 
 		if cancel_signal() {
-			None
+			Err(FileInfoHandleErr::Cancelled)
 		} else {
-			Some(ViewMsg {
+			Ok(ViewMsg {
 				fileinfo,
 				body: super::ViewType::Directory(filenames),
 				attr: Some(Paragraph::new(Text::from(attr_vec)))
@@ -85,7 +76,7 @@ impl Viewer for DirViewer {
 
 	fn handle_event(&mut self, event: crossterm::event::Event) {}
 
-	fn draw(&self, view_msg: &ViewMsg, cursor: usize, f: &mut Frame, rect: &Rect) {
+	fn draw(&self, view_msg: &ViewMsg, cursor: u16, f: &mut Frame, rect: &Rect) {
 		let attrs = view_msg.attr.as_ref();
 		let attrs_height = attrs
 			.as_ref()
@@ -99,13 +90,13 @@ impl Viewer for DirViewer {
 		attrs.map(|e| f.render_widget(e.clone(), tb[1]));
 
 		match &view_msg.body {
-			super::ViewType::Directory(entries) => {
-				tracing::info!("not directory dir {}", entries.len());
-				f.render_widget(Paragraph::new(Text::from(entries.clone())), tb[0])
-			}
+			super::ViewType::Directory(entries) => f.render_widget(
+				Paragraph::new(Text::from(entries.clone())).scroll((cursor as u16, 0)),
+				tb[0]
+			),
 
 			_ => {
-				tracing::info!("not directory dir");
+				tracing::info!("not directory");
 			}
 		}
 	}
