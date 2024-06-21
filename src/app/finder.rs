@@ -83,8 +83,6 @@ pub struct Finder {
 	show_start: usize,
 	last_move: Option<FinderMove>,
 
-	cached_selection: Rc<RefCell<Option<FilePath>>>,
-
 	contents: Arc<RwLock<Vec<FilePath>>>,
 	query: String,
 	filtered: FileterResultEnum,
@@ -204,7 +202,6 @@ impl Finder {
 			theme,
 			show_start: 0,
 			filter_worker: Default::default(),
-			cached_selection: Default::default(),
 			last_move: None
 		}
 	}
@@ -341,19 +338,14 @@ impl Component for Finder {
 			FileterResultEnum::None => vec![]
 		};
 
-		let replace_and_send = |selected: Option<FilePath>| {
-			let mut cached = self.cached_selection.borrow_mut();
-			let ofi = cached.as_ref();
-			if ofi != selected.as_ref() {
-				self.out_tx
-					.send(FinderOut::Selected(selected.clone()))
-					.unwrap();
-				*cached = selected.clone();
-			}
+		let send_selected = |selected: Option<FilePath>| {
+			self.out_tx
+				.send(FinderOut::Selected(selected.clone()))
+				.unwrap();
 		};
 
 		if page.is_empty() {
-			replace_and_send(None);
+			send_selected(None);
 		}
 
 		let items = page
@@ -364,7 +356,7 @@ impl Component for Finder {
 				if selected {
 					let selected = vec.get(*idx).map(|e| e.clone());
 					if let Some(selected) = selected {
-						replace_and_send(Some(selected))
+						send_selected(Some(selected))
 					}
 				}
 

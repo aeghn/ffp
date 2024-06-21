@@ -216,10 +216,14 @@ impl Tui {
 							ComponentEnum::FINDER | ComponentEnum::STATUS
 						},
 						crate::app::finder::FinderOut::Selected(selected) => {
-							viewer.handle_file(selected.as_ref());
-							self.cur_file = selected.map(|e| e.into());
+							if self.cur_file.as_ref().map(|e| &e.path) == selected.as_ref() {
+								ComponentEnum::empty()
+							} else {
+								viewer.handle_file(selected.as_ref());
+								self.cur_file = selected.map(|e| e.into());
 
-							ComponentEnum::STAGE
+								ComponentEnum::STAGE
+							}
 						},
 						crate::app::finder::FinderOut::TotalCount(count) => {
 							status.set_total(count);
